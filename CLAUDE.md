@@ -143,14 +143,41 @@ end to end.
   tests) passes, `flutter build apk --debug` succeeds. User tests manually
   on their own device/emulator from here.
 
-### Phase 2 — Firebase
-- [ ] `flutterfire configure` (needs the user's own `firebase login` + a
-      Firebase project — hand off exact commands, don't attempt account-bound
-      steps autonomously)
-- [ ] Real email/password auth wired to the login/signup screens
-- [ ] Move contacts/history/settings from local seed data to Firestore
-- Verify: `flutter analyze`/`flutter build` clean; the user tests sign up,
-  sign in, and the Firestore round-trip manually
+### Phase 2 — Firebase ✅ done
+- [x] `flutterfire configure` — project `she-secure-pk` (Firestore in
+      `asia-south1`/Mumbai, closest available region to Pakistan), Android
+      app registered, `lib/firebase_options.dart` +
+      `android/app/google-services.json` generated and committed (these
+      hold a public client API key restricted by the Firestore rules
+      below, not a secret — standard practice to commit for mobile apps)
+- [x] Firestore security rules (`firestore.rules`, deployed): a signed-in
+      user may only read/write their own `users/{uid}` subtree
+- [x] Email/Password sign-in enabled in Firebase Auth (manual one-time
+      console toggle — not exposed by the Firebase CLI)
+- [x] Real email/password auth wired to login/signup/logout, with
+      inline error messages and a loading state on submit
+- [x] Forgot-password: adapted from the canvas's fake in-app 6-digit-code
+      flow to Firebase Auth's real (link-based) password reset — a true
+      in-app OTP flow isn't something Firebase Auth supports natively
+      without a custom Cloud Function backend, and a fake code screen
+      that doesn't actually verify anything would be worse than not
+      having it. Same visual language, now asks for email once and
+      confirms the reset link was sent, instead of pretending to check a
+      code that was never real.
+- [x] Contacts, settings (feature toggles), Sentinel/Listen
+      on-off+sensitivity, and SOS history all moved from local seed data
+      to `users/{uid}/...` in Firestore, live-updating via snapshot
+      listeners bound/unbound on sign-in/out (`_AuthBinder` in `app.dart`)
+- [x] "Add manually" on Trusted Contacts now actually writes to
+      Firestore (a simple dialog) — the native phone-contact picker is
+      still Phase 3, but manual entry needed no native plugin so it
+      shipped now rather than staying a fake button
+- [x] New accounts are seeded with the same 4 demo trusted contacts the
+      canvas used, written to Firestore on sign-up, so a fresh account
+      isn't a blank slate
+- Verify: `flutter analyze` clean, `flutter test` passing, `flutter build
+  apk --debug` succeeds. User tests sign up, sign in, sign out, and the
+  Firestore round-trip (contacts persist across a logout/login) manually.
 
 ### Phase 3 — Native device integrations
 - [ ] `flutter_contacts` picker on the Trusted Contacts screen

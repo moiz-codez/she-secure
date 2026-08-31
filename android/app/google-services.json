@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "597954492234",
+    "project_id": "she-secure-pk",
+    "storage_bucket": "she-secure-pk.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:597954492234:android:09701a09b0d01f8ae833b3",
+        "android_client_info": {
+          "package_name": "com.shesecure.she_secure"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBeeIcYXZGpkC_q6AdsHpIZb12LPgs5w6s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

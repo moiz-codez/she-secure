@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
 class SettingRow {
@@ -16,19 +19,25 @@ class PermissionRow {
   final bool granted;
 }
 
-/// Feature on/off toggles shown on the Settings screen. Backed by
-/// Firestore from Phase 2 onward; local-only for now.
+const _defaultFeatures = {
+  'sos': true,
+  'shake': true,
+  'power': true,
+  'location': true,
+  'record': true,
+  'fake': true,
+  'sentinel': true,
+  'listen': true,
+};
+
+/// Feature on/off toggles shown on the Settings screen, backed by the
+/// `features` map on `users/{uid}/settings`. [SentinelProvider] and
+/// [ListenProvider] read/write their own fields on that same document
+/// independently — see their `bindUser`.
 class SettingsProvider extends ChangeNotifier {
-  final Map<String, bool> features = {
-    'sos': true,
-    'shake': true,
-    'power': true,
-    'location': true,
-    'record': true,
-    'fake': true,
-    'sentinel': true,
-    'listen': true,
-  };
+  Map<String, bool> features = Map.of(_defaultFeatures);
+  DocumentReference<Map<String, dynamic>>? _doc;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _sub;
 
   static const rows = [
     SettingRow(key: 'sos', label: 'SOS button', sub: 'The main emergency alert'),
@@ -50,8 +59,36 @@ class SettingsProvider extends ChangeNotifier {
 
   bool isOn(String key) => features[key] ?? false;
 
+  void bindUser(String uid) {
+    _sub?.cancel();
+    _doc = FirebaseFirestore.instance.collection('users').doc(uid).collection('settings').doc('preferences');
+    _sub = _doc!.snapshots().listen((snap) {
+      final data = snap.data();
+      final stored = data?['features'] as Map<String, dynamic>?;
+      features = stored == null
+          ? Map.of(_defaultFeatures)
+          : {for (final k in _defaultFeatures.keys) k: (stored[k] as bool?) ?? _defaultFeatures[k]!};
+      notifyListeners();
+    });
+  }
+
+  void unbind() {
+    _sub?.cancel();
+    _sub = null;
+    _doc = null;
+    features = Map.of(_defaultFeatures);
+    notifyListeners();
+  }
+
   void toggle(String key) {
     features[key] = !(features[key] ?? false);
     notifyListeners();
+    _doc?.set({'features': features}, SetOptions(merge: true));
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
   }
 }

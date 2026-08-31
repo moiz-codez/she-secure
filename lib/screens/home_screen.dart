@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../app.dart';
+import '../providers/auth_provider.dart';
+import '../providers/contacts_provider.dart';
 import '../providers/listen_provider.dart';
 import '../providers/sentinel_provider.dart';
 import '../theme/app_colors.dart';
@@ -73,9 +75,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       style: TextStyle(fontSize: 11, letterSpacing: 1.1, color: AppColors.textMuted(0.35)),
                     ),
                     const SizedBox(height: 5),
-                    const Text(
-                      'Ayesha',
-                      style: TextStyle(fontSize: 25, fontWeight: FontWeight.w500, letterSpacing: -0.5),
+                    Consumer<AuthProvider>(
+                      builder: (context, auth, _) => Text(
+                        auth.user?.displayName?.isNotEmpty == true ? auth.user!.displayName! : 'there',
+                        style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w500, letterSpacing: -0.5),
+                      ),
                     ),
                   ],
                 ),
@@ -100,9 +104,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                           decoration: const BoxDecoration(color: AppColors.success, shape: BoxShape.circle),
                         ),
                         const SizedBox(width: 8),
-                        Text(
-                          '4 contacts ready · location on',
-                          style: TextStyle(fontSize: 12, color: AppColors.textMuted(0.72)),
+                        Consumer<ContactsProvider>(
+                          builder: (context, contacts, _) => Text(
+                            '${contacts.contacts.length} contacts ready',
+                            style: TextStyle(fontSize: 12, color: AppColors.textMuted(0.72)),
+                          ),
                         ),
                       ],
                     ),
@@ -409,12 +415,20 @@ class _HomeDrawer extends StatelessWidget {
                     child: Icon(Icons.person_outline_rounded, size: 20, color: AppColors.textMuted(0.5)),
                   ),
                   const SizedBox(width: 12),
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Ayesha Siddiqui', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w500)),
-                      Text('Karachi · 4 contacts', style: TextStyle(fontSize: 11.5, color: Color.fromRGBO(233, 233, 237, 0.45))),
-                    ],
+                  Consumer2<AuthProvider, ContactsProvider>(
+                    builder: (context, auth, contacts, _) => Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          auth.user?.displayName?.isNotEmpty == true ? auth.user!.displayName! : 'She Secure',
+                          style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w500),
+                        ),
+                        Text(
+                          '${contacts.contacts.length} contacts',
+                          style: const TextStyle(fontSize: 11.5, color: Color.fromRGBO(233, 233, 237, 0.45)),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -458,8 +472,10 @@ class _HomeDrawer extends StatelessWidget {
                 leading: Icon(Icons.logout_rounded, size: 19, color: AppColors.textMuted(0.7)),
                 title: Text('Log out', style: TextStyle(fontSize: 14, color: AppColors.textMuted(0.6))),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
-                onTap: () {
-                  Navigator.of(context).pushNamedAndRemoveUntil(Routes.auth, (route) => false);
+                onTap: () async {
+                  final navigator = Navigator.of(context);
+                  await context.read<AuthProvider>().signOut();
+                  navigator.pushNamedAndRemoveUntil(Routes.auth, (route) => false);
                 },
               ),
             ),

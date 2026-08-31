@@ -1,8 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../app.dart';
+import '../providers/auth_provider.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_logo.dart';
 
@@ -23,7 +25,9 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     _barController = AnimationController(vsync: this, duration: const Duration(milliseconds: 1150))
       ..repeat(reverse: true);
     _navTimer = Timer(const Duration(milliseconds: 2300), () {
-      if (mounted) Navigator.of(context).pushReplacementNamed(Routes.onboarding);
+      if (!mounted) return;
+      final signedIn = context.read<AuthProvider>().isSignedIn;
+      Navigator.of(context).pushReplacementNamed(signedIn ? Routes.home : Routes.onboarding);
     });
   }
 

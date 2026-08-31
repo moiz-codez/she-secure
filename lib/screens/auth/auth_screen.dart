@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../app.dart';
+import '../../providers/auth_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/app_logo.dart';
 
@@ -98,10 +100,42 @@ class _AuthTabButton extends StatelessWidget {
   }
 }
 
-class _LoginForm extends StatelessWidget {
+class _LoginForm extends StatefulWidget {
   const _LoginForm({required this.onSubmit});
 
   final VoidCallback onSubmit;
+
+  @override
+  State<_LoginForm> createState() => _LoginFormState();
+}
+
+class _LoginFormState extends State<_LoginForm> {
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  bool _submitting = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _email.dispose();
+    _password.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    try {
+      await context.read<AuthProvider>().signIn(email: _email.text.trim(), password: _password.text);
+      if (mounted) widget.onSubmit();
+    } catch (e) {
+      if (mounted) setState(() => _error = authErrorMessage(e));
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -119,9 +153,9 @@ class _LoginForm extends StatelessWidget {
           style: TextStyle(fontSize: 13.5, color: AppColors.textMuted(0.55)),
         ),
         const SizedBox(height: 26),
-        const _LabeledField(label: 'Email', hint: 'ayesha@example.com'),
+        _LabeledField(label: 'Email', hint: 'ayesha@example.com', controller: _email, keyboardType: TextInputType.emailAddress),
         const SizedBox(height: 16),
-        const _LabeledField(label: 'Password', hint: '••••••••', obscure: true),
+        _LabeledField(label: 'Password', hint: '••••••••', obscure: true, controller: _password),
         Align(
           alignment: Alignment.centerRight,
           child: TextButton(
@@ -130,17 +164,28 @@ class _LoginForm extends StatelessWidget {
             child: const Text('Forgot password?', style: TextStyle(fontSize: 12.5)),
           ),
         ),
+        if (_error != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(_error!, style: TextStyle(fontSize: 12, color: AppColors.danger)),
+          ),
         const SizedBox(height: 6),
         SizedBox(
           width: double.infinity,
           child: OutlinedButton(
-            onPressed: onSubmit,
+            onPressed: _submitting ? null : _submit,
             style: OutlinedButton.styleFrom(
               foregroundColor: AppColors.accent,
               side: const BorderSide(color: AppColors.accent),
               minimumSize: const Size.fromHeight(48),
             ),
-            child: const Text('Sign in', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 15)),
+            child: _submitting
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accent),
+                  )
+                : const Text('Sign in', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 15)),
           ),
         ),
         const SizedBox(height: 20),
@@ -154,10 +199,54 @@ class _LoginForm extends StatelessWidget {
   }
 }
 
-class _SignupForm extends StatelessWidget {
+class _SignupForm extends StatefulWidget {
   const _SignupForm({required this.onSubmit});
 
   final VoidCallback onSubmit;
+
+  @override
+  State<_SignupForm> createState() => _SignupFormState();
+}
+
+class _SignupFormState extends State<_SignupForm> {
+  final _name = TextEditingController();
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  final _confirm = TextEditingController();
+  bool _submitting = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _email.dispose();
+    _password.dispose();
+    _confirm.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_password.text != _confirm.text) {
+      setState(() => _error = 'Passwords don\'t match.');
+      return;
+    }
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    try {
+      await context.read<AuthProvider>().signUp(
+            name: _name.text.trim(),
+            email: _email.text.trim(),
+            password: _password.text,
+          );
+      if (mounted) widget.onSubmit();
+    } catch (e) {
+      if (mounted) setState(() => _error = authErrorMessage(e));
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -175,13 +264,13 @@ class _SignupForm extends StatelessWidget {
           style: TextStyle(fontSize: 13.5, color: AppColors.textMuted(0.55)),
         ),
         const SizedBox(height: 24),
-        const _LabeledField(label: 'Full name', hint: 'Ayesha Siddiqui'),
+        _LabeledField(label: 'Full name', hint: 'Ayesha Siddiqui', controller: _name),
         const SizedBox(height: 15),
-        const _LabeledField(label: 'Email', hint: 'ayesha@example.com'),
+        _LabeledField(label: 'Email', hint: 'ayesha@example.com', controller: _email, keyboardType: TextInputType.emailAddress),
         const SizedBox(height: 15),
-        const _LabeledField(label: 'Password', hint: 'At least 8 characters', obscure: true),
+        _LabeledField(label: 'Password', hint: 'At least 8 characters', obscure: true, controller: _password),
         const SizedBox(height: 15),
-        const _LabeledField(label: 'Confirm password', hint: 'Type it once more', obscure: true),
+        _LabeledField(label: 'Confirm password', hint: 'Type it once more', obscure: true, controller: _confirm),
         const SizedBox(height: 20),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
@@ -214,17 +303,28 @@ class _SignupForm extends StatelessWidget {
             ],
           ),
         ),
+        if (_error != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 14),
+            child: Text(_error!, style: TextStyle(fontSize: 12, color: AppColors.danger)),
+          ),
         const SizedBox(height: 22),
         SizedBox(
           width: double.infinity,
           child: OutlinedButton(
-            onPressed: onSubmit,
+            onPressed: _submitting ? null : _submit,
             style: OutlinedButton.styleFrom(
               foregroundColor: AppColors.accent,
               side: const BorderSide(color: AppColors.accent),
               minimumSize: const Size.fromHeight(48),
             ),
-            child: const Text('Create account', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 15)),
+            child: _submitting
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accent),
+                  )
+                : const Text('Create account', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 15)),
           ),
         ),
       ],
@@ -233,11 +333,19 @@ class _SignupForm extends StatelessWidget {
 }
 
 class _LabeledField extends StatelessWidget {
-  const _LabeledField({required this.label, required this.hint, this.obscure = false});
+  const _LabeledField({
+    required this.label,
+    required this.hint,
+    required this.controller,
+    this.obscure = false,
+    this.keyboardType,
+  });
 
   final String label;
   final String hint;
+  final TextEditingController controller;
   final bool obscure;
+  final TextInputType? keyboardType;
 
   @override
   Widget build(BuildContext context) {
@@ -246,7 +354,12 @@ class _LabeledField extends StatelessWidget {
       children: [
         Text(label, style: TextStyle(fontSize: 12, color: AppColors.textMuted(0.68))),
         const SizedBox(height: 6),
-        TextField(obscureText: obscure, decoration: InputDecoration(hintText: hint)),
+        TextField(
+          controller: controller,
+          obscureText: obscure,
+          keyboardType: keyboardType,
+          decoration: InputDecoration(hintText: hint),
+        ),
       ],
     );
   }

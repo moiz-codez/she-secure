@@ -1,8 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
-import '../../app.dart';
+import '../../providers/auth_provider.dart';
 import '../../theme/app_colors.dart';
 
+/// Firebase Auth's password reset is link-based (an email with a secure
+/// link to a Firebase-hosted page), not an in-app 6-digit code the design
+/// canvas mocked up. Building a real in-app OTP flow instead would need a
+/// custom backend (Cloud Function issuing/verifying codes) — out of scope
+/// for wiring up "real" auth, and a fake code screen that doesn't actually
+/// verify anything would be worse than not having it. This keeps the same
+/// visual language but only claims what actually happens: request the
+/// email, confirm it was sent.
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
 
@@ -11,13 +20,31 @@ class ForgotPasswordScreen extends StatefulWidget {
 }
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
-  int _step = 0;
-  bool _resent = false;
+  final _email = TextEditingController();
+  bool _sent = false;
+  bool _submitting = false;
+  String? _error;
 
-  void _next() => setState(() {
-        _step = (_step + 1).clamp(0, 2);
-        _resent = false;
-      });
+  @override
+  void dispose() {
+    _email.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sendResetEmail() async {
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    try {
+      await context.read<AuthProvider>().sendPasswordReset(_email.text.trim());
+      if (mounted) setState(() => _sent = true);
+    } catch (e) {
+      if (mounted) setState(() => _error = authErrorMessage(e));
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,48 +57,14 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             children: [
               TextButton.icon(
                 onPressed: () => Navigator.of(context).pop(),
-                style: TextButton.styleFrom(
-                  foregroundColor: AppColors.textMuted(0.6),
-                  padding: EdgeInsets.zero,
-                ),
+                style: TextButton.styleFrom(foregroundColor: AppColors.textMuted(0.6), padding: EdgeInsets.zero),
                 icon: const Icon(Icons.arrow_back_rounded, size: 16),
                 label: const Text('Back to sign in', style: TextStyle(fontSize: 13)),
               ),
-              const SizedBox(height: 6),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 26),
-                child: Row(
-                  children: List.generate(3, (i) {
-                    final active = i == _step;
-                    return AnimatedContainer(
-                      duration: const Duration(milliseconds: 250),
-                      margin: const EdgeInsets.only(right: 7),
-                      width: active ? 20 : 6,
-                      height: 6,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(3),
-                        color: active ? AppColors.accent : AppColors.textMuted(0.2),
-                      ),
-                    );
-                  }),
-                ),
-              ),
+              const SizedBox(height: 22),
               AnimatedSwitcher(
                 duration: const Duration(milliseconds: 220),
-                child: switch (_step) {
-                  0 => _StepOne(key: const ValueKey(0), onNext: _next),
-                  1 => _StepTwo(
-                      key: const ValueKey(1),
-                      resent: _resent,
-                      onResend: () => setState(() => _resent = true),
-                      onNext: _next,
-                    ),
-                  _ => _StepThree(
-                      key: const ValueKey(2),
-                      onDone: () =>
-                          Navigator.of(context).pushNamedAndRemoveUntil(Routes.home, (route) => false),
-                    ),
-                },
+                child: _sent ? const _SentConfirmation(key: ValueKey('sent')) : _buildRequestForm(const ValueKey('request')),
               ),
             ],
           ),
@@ -79,16 +72,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       ),
     );
   }
-}
 
-class _StepOne extends StatelessWidget {
-  const _StepOne({super.key, required this.onNext});
-
-  final VoidCallback onNext;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildRequestForm(Key key) {
     return Column(
+      key: key,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
@@ -97,24 +84,39 @@ class _StepOne extends StatelessWidget {
         ),
         const SizedBox(height: 7),
         Text(
-          'Enter the email or mobile number on your account. We will send a six-digit code.',
+          'Enter the email on your account. We will send a link to reset your password.',
           style: TextStyle(fontSize: 13.5, height: 1.6, color: AppColors.textMuted(0.55)),
         ),
         const SizedBox(height: 24),
-        Text('Email or mobile', style: TextStyle(fontSize: 12, color: AppColors.textMuted(0.68))),
+        Text('Email', style: TextStyle(fontSize: 12, color: AppColors.textMuted(0.68))),
         const SizedBox(height: 6),
-        const TextField(decoration: InputDecoration(hintText: 'ayesha@example.com')),
+        TextField(
+          controller: _email,
+          keyboardType: TextInputType.emailAddress,
+          decoration: const InputDecoration(hintText: 'ayesha@example.com'),
+        ),
+        if (_error != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Text(_error!, style: TextStyle(fontSize: 12, color: AppColors.danger)),
+          ),
         const SizedBox(height: 22),
         SizedBox(
           width: double.infinity,
           child: OutlinedButton(
-            onPressed: onNext,
+            onPressed: _submitting ? null : _sendResetEmail,
             style: OutlinedButton.styleFrom(
               foregroundColor: AppColors.accent,
               side: const BorderSide(color: AppColors.accent),
               minimumSize: const Size.fromHeight(48),
             ),
-            child: const Text('Send code', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 15)),
+            child: _submitting
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.accent),
+                  )
+                : const Text('Send reset link', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 15)),
           ),
         ),
         const SizedBox(height: 22),
@@ -144,127 +146,42 @@ class _StepOne extends StatelessWidget {
   }
 }
 
-class _StepTwo extends StatelessWidget {
-  const _StepTwo({super.key, required this.resent, required this.onResend, required this.onNext});
-
-  final bool resent;
-  final VoidCallback onResend;
-  final VoidCallback onNext;
+class _SentConfirmation extends StatelessWidget {
+  const _SentConfirmation({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Container(
+          width: 64,
+          height: 64,
+          margin: const EdgeInsets.only(bottom: 20),
+          decoration: BoxDecoration(color: AppColors.accentTint(0.12), shape: BoxShape.circle),
+          child: const Icon(Icons.mark_email_read_outlined, size: 28, color: AppColors.accentLight),
+        ),
         const Text(
-          'Enter the code',
+          'Check your email',
           style: TextStyle(fontSize: 23, fontWeight: FontWeight.w500, letterSpacing: -0.46),
         ),
         const SizedBox(height: 7),
         Text(
-          'Sent to ayesha@example.com. It expires in ten minutes.',
+          'We sent a link to reset your password. Open it on this phone to set a new one, then '
+          'come back and sign in.',
           style: TextStyle(fontSize: 13.5, height: 1.6, color: AppColors.textMuted(0.55)),
-        ),
-        const SizedBox(height: 24),
-        Row(
-          children: List.generate(6, (i) {
-            return Expanded(
-              child: Padding(
-                padding: EdgeInsets.only(right: i == 5 ? 0 : 8),
-                child: TextField(
-                  maxLength: 1,
-                  textAlign: TextAlign.center,
-                  keyboardType: TextInputType.number,
-                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w500),
-                  decoration: const InputDecoration(counterText: '', contentPadding: EdgeInsets.symmetric(vertical: 14)),
-                ),
-              ),
-            );
-          }),
         ),
         const SizedBox(height: 22),
         SizedBox(
           width: double.infinity,
           child: OutlinedButton(
-            onPressed: onNext,
+            onPressed: () => Navigator.of(context).pop(),
             style: OutlinedButton.styleFrom(
               foregroundColor: AppColors.accent,
               side: const BorderSide(color: AppColors.accent),
               minimumSize: const Size.fromHeight(48),
             ),
-            child: const Text('Verify', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 15)),
-          ),
-        ),
-        const SizedBox(height: 16),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text('Did not get it?', style: TextStyle(fontSize: 12.5, color: AppColors.textMuted(0.45))),
-            TextButton(
-              onPressed: onResend,
-              style: TextButton.styleFrom(foregroundColor: AppColors.accent),
-              child: const Text('Send again', style: TextStyle(fontSize: 12.5)),
-            ),
-          ],
-        ),
-        if (resent)
-          Container(
-            margin: const EdgeInsets.only(top: 4),
-            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
-            decoration: BoxDecoration(
-              color: AppColors.accentTint(0.08),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppColors.accentTint(0.24)),
-            ),
-            child: Text(
-              'A new code is on its way.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: AppColors.accentLight),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _StepThree extends StatelessWidget {
-  const _StepThree({super.key, required this.onDone});
-
-  final VoidCallback onDone;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Choose a new password',
-          style: TextStyle(fontSize: 23, fontWeight: FontWeight.w500, letterSpacing: -0.46),
-        ),
-        const SizedBox(height: 7),
-        Text(
-          'At least eight characters. You will stay signed in on this phone.',
-          style: TextStyle(fontSize: 13.5, height: 1.6, color: AppColors.textMuted(0.55)),
-        ),
-        const SizedBox(height: 24),
-        Text('New password', style: TextStyle(fontSize: 12, color: AppColors.textMuted(0.68))),
-        const SizedBox(height: 6),
-        const TextField(obscureText: true, decoration: InputDecoration(hintText: 'At least 8 characters')),
-        const SizedBox(height: 15),
-        Text('Confirm password', style: TextStyle(fontSize: 12, color: AppColors.textMuted(0.68))),
-        const SizedBox(height: 6),
-        const TextField(obscureText: true, decoration: InputDecoration(hintText: 'Type it once more')),
-        const SizedBox(height: 22),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton(
-            onPressed: onDone,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.accent,
-              side: const BorderSide(color: AppColors.accent),
-              minimumSize: const Size.fromHeight(48),
-            ),
-            child: const Text('Save and sign in', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 15)),
+            child: const Text('Back to sign in', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 15)),
           ),
         ),
       ],

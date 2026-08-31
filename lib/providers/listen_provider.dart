@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
 import 'sos_provider.dart';
@@ -27,6 +28,8 @@ class ListenProvider extends ChangeNotifier {
   String earSensitivity = 'Balanced';
   bool detected = false;
   Timer? _detectionTimer;
+  DocumentReference<Map<String, dynamic>>? _doc;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _prefsSub;
 
   /// Set by the listen screen while mounted, so this provider can trigger
   /// navigation to the SOS screen on detection.
@@ -45,14 +48,36 @@ class ListenProvider extends ChangeNotifier {
         _ => 'A scream or sustained crying fires an alert. Traffic and TV noise are ignored.',
       };
 
+  void bindUser(String uid) {
+    _prefsSub?.cancel();
+    _doc = FirebaseFirestore.instance.collection('users').doc(uid).collection('settings').doc('preferences');
+    _prefsSub = _doc!.snapshots().listen((snap) {
+      final data = snap.data();
+      listenOn = data?['listenOn'] as bool? ?? true;
+      earSensitivity = data?['earSensitivity'] as String? ?? 'Balanced';
+      notifyListeners();
+    });
+  }
+
+  void unbindUser() {
+    _prefsSub?.cancel();
+    _prefsSub = null;
+    _doc = null;
+    listenOn = true;
+    earSensitivity = 'Balanced';
+    notifyListeners();
+  }
+
   void toggle() {
     listenOn = !listenOn;
     notifyListeners();
+    _doc?.set({'listenOn': listenOn}, SetOptions(merge: true));
   }
 
   void setSensitivity(String value) {
     earSensitivity = value;
     notifyListeners();
+    _doc?.set({'earSensitivity': value}, SetOptions(merge: true));
   }
 
   void heardScream() {
@@ -70,6 +95,7 @@ class ListenProvider extends ChangeNotifier {
   @override
   void dispose() {
     _detectionTimer?.cancel();
+    _prefsSub?.cancel();
     super.dispose();
   }
 }

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import 'sos_provider.dart';
@@ -41,6 +42,8 @@ class SentinelProvider extends ChangeNotifier {
 
   bool sentinelOn = true;
   String sensitivity = 'Balanced';
+  DocumentReference<Map<String, dynamic>>? _doc;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _prefsSub;
 
   // Check-in state (the silent "are you safe?" prompt).
   bool checkInActive = false;
@@ -86,14 +89,36 @@ class SentinelProvider extends ChangeNotifier {
         _ => 'Asks when two signals disagree at once — say, wrong place and running pace.',
       };
 
+  void bindUser(String uid) {
+    _prefsSub?.cancel();
+    _doc = FirebaseFirestore.instance.collection('users').doc(uid).collection('settings').doc('preferences');
+    _prefsSub = _doc!.snapshots().listen((snap) {
+      final data = snap.data();
+      sentinelOn = data?['sentinelOn'] as bool? ?? true;
+      sensitivity = data?['sensitivity'] as String? ?? 'Balanced';
+      notifyListeners();
+    });
+  }
+
+  void unbindUser() {
+    _prefsSub?.cancel();
+    _prefsSub = null;
+    _doc = null;
+    sentinelOn = true;
+    sensitivity = 'Balanced';
+    notifyListeners();
+  }
+
   void toggle() {
     sentinelOn = !sentinelOn;
     notifyListeners();
+    _doc?.set({'sentinelOn': sentinelOn}, SetOptions(merge: true));
   }
 
   void setSensitivity(String value) {
     sensitivity = value;
     notifyListeners();
+    _doc?.set({'sensitivity': value}, SetOptions(merge: true));
   }
 
   void raiseCheckIn(String reason) {
@@ -138,6 +163,7 @@ class SentinelProvider extends ChangeNotifier {
   @override
   void dispose() {
     _checkInTimer?.cancel();
+    _prefsSub?.cancel();
     super.dispose();
   }
 }

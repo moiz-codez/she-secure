@@ -1,8 +1,10 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/sos_event.dart';
+import '../utils/formatters.dart';
 
 enum SosState { idle, counting, armed }
 
@@ -24,19 +26,45 @@ class SosProvider extends ChangeNotifier {
   Timer? _countdownTimer;
   Timer? _elapsedTimer;
 
-  final List<SosHistoryEntry> history = const [
-    SosHistoryEntry(
-      where: 'Near Gulshan-e-Iqbal Block 5',
-      when: '12 Aug, 9:41 pm',
-      detail: '4 contacts reached · cancelled after 2 min',
-    ),
-    SosHistoryEntry(
-      where: 'Shahrah-e-Faisal, near Nursery',
-      when: '28 Jul, 7:12 pm',
-      detail: '3 contacts reached · Ammi called back',
-    ),
-    SosHistoryEntry(where: 'Test alert', when: '14 Jul, 4:03 pm', detail: 'Practice run · no message sent'),
-  ];
+  List<SosHistoryEntry> history = const [];
+  CollectionReference<Map<String, dynamic>>? _historyCollection;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _historySub;
+
+  void bindUser(String uid) {
+    _historySub?.cancel();
+    _historyCollection = FirebaseFirestore.instance.collection('users').doc(uid).collection('sosHistory');
+    _historySub = _historyCollection!.orderBy('when', descending: true).snapshots().listen((snapshot) {
+      history = snapshot.docs.map((d) {
+        final data = d.data();
+        return SosHistoryEntry(
+          where: data['where'] as String? ?? 'Unknown location',
+          when: _formatWhen((data['when'] as Timestamp?)?.toDate()),
+          detail: data['detail'] as String? ?? '',
+        );
+      }).toList();
+      notifyListeners();
+    });
+  }
+
+  void unbind() {
+    _historySub?.cancel();
+    _historySub = null;
+    _historyCollection = null;
+    history = const [];
+    notifyListeners();
+  }
+
+  static String _formatWhen(DateTime? dt) {
+    if (dt == null) return '';
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    final hour12 = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+    final minute = dt.minute.toString().padLeft(2, '0');
+    final period = dt.hour >= 12 ? 'pm' : 'am';
+    return '${dt.day} ${months[dt.month - 1]}, $hour12:$minute $period';
+  }
 
   void beginCountdown() {
     if (state != SosState.idle) return;
@@ -55,6 +83,8 @@ class SosProvider extends ChangeNotifier {
     });
   }
 
+  DocumentReference<Map<String, dynamic>>? _activeHistoryDoc;
+
   /// Arms the alert immediately, skipping the hold+countdown — used by
   /// Smart Sentinel's auto-escalation and Distress Listening's
   /// no-confirmation trigger.
@@ -72,11 +102,25 @@ class SosProvider extends ChangeNotifier {
       if (elapsed == 11) acked = 3;
       notifyListeners();
     });
+
+    // Real location (instead of this placeholder) and actual SMS delivery
+    // land in the native-integrations phase; the history record itself is
+    // real starting now.
+    _historyCollection
+        ?.add({'where': 'Location pending (native integration not wired up yet)', 'when': FieldValue.serverTimestamp(), 'detail': 'Alert sent'})
+        .then((doc) => _activeHistoryDoc = doc);
   }
 
   void cancel() {
     _countdownTimer?.cancel();
     _elapsedTimer?.cancel();
+    if (_activeHistoryDoc != null) {
+      final wasArmed = state == SosState.armed;
+      _activeHistoryDoc!.update({
+        'detail': wasArmed ? 'Cancelled after ${formatMmSs(elapsed)}' : 'Cancelled before sending',
+      });
+      _activeHistoryDoc = null;
+    }
     state = SosState.idle;
     count = 5;
     elapsed = 0;
@@ -88,6 +132,7 @@ class SosProvider extends ChangeNotifier {
   void dispose() {
     _countdownTimer?.cancel();
     _elapsedTimer?.cancel();
+    _historySub?.cancel();
     super.dispose();
   }
 }

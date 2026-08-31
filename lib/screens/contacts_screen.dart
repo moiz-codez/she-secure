@@ -1,9 +1,61 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/contact.dart';
 import '../providers/contacts_provider.dart';
 import '../theme/app_colors.dart';
 import '../widgets/status_pill.dart';
+
+Future<void> _showAddContactDialog(BuildContext context, ContactsProvider contacts) async {
+  if (contacts.contacts.length >= 5) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('Your list is full — remove someone first.')));
+    return;
+  }
+  final nameCtrl = TextEditingController();
+  final relationCtrl = TextEditingController();
+  final phoneCtrl = TextEditingController();
+
+  await showDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      backgroundColor: AppColors.surface,
+      title: const Text('Add a trusted contact'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Name')),
+          const SizedBox(height: 10),
+          TextField(controller: relationCtrl, decoration: const InputDecoration(labelText: 'Relation')),
+          const SizedBox(height: 10),
+          TextField(
+            controller: phoneCtrl,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(labelText: 'Phone'),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () {
+            final name = nameCtrl.text.trim();
+            if (name.isEmpty || phoneCtrl.text.trim().isEmpty) return;
+            contacts.add(TrustedContact(
+              name: name,
+              relation: relationCtrl.text.trim().isEmpty ? 'Contact' : relationCtrl.text.trim(),
+              phone: phoneCtrl.text.trim(),
+              initials: name[0].toUpperCase(),
+            ));
+            Navigator.of(dialogContext).pop();
+          },
+          child: const Text('Add'),
+        ),
+      ],
+    ),
+  );
+}
 
 class ContactsScreen extends StatelessWidget {
   const ContactsScreen({super.key});
@@ -62,7 +114,7 @@ class ContactsScreen extends StatelessWidget {
                         const SizedBox(width: 9),
                         Expanded(
                           child: OutlinedButton.icon(
-                            onPressed: () => showNotBuiltSnack(context),
+                            onPressed: () => _showAddContactDialog(context, contacts),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: AppColors.text,
                               side: BorderSide(color: AppColors.textMuted(0.16)),

@@ -119,17 +119,29 @@ Edit this section freely — add/remove/reorder items per phase before each
 one starts. Each phase should end in a build that runs and can be exercised
 end to end.
 
-### Phase 1 — Scaffold + design system + navigation
-- [ ] `flutter create` (Android-only platform target)
-- [ ] Port theme: colors, fonts, spacing from the design canvas
-- [ ] Build all 16 screens as real widgets
-- [ ] Provider state machines mirroring the canvas's `Component` class
-      (screen enum, onboarding index, sos idle/counting/armed, fake-call
-      phases, settings toggles, etc.), using local/in-memory data only —
-      no Firebase or native plugins yet
-- Verify: `flutter analyze` clean, `flutter build` succeeds; the user tests
-  manually on their own device/emulator after the phase — no need to launch
-  an emulator as part of this phase's own verification
+### Phase 1 — Scaffold + design system + navigation ✅ done
+- [x] `flutter create` (Android-only platform target)
+- [x] Port theme: colors, fonts, spacing from the design canvas
+- [x] Build all 16 screens as real widgets
+- [x] Provider state machines mirroring the canvas's `Component` class
+      (sos idle/counting/armed, fake-call phases, settings toggles, sentinel
+      check-in escalation, listen detection, etc.), using local/in-memory
+      data only — no Firebase or native plugins yet. Onboarding index,
+      auth tab, and forgot-password step are local widget state instead of
+      providers, since nothing else needs to read them. Screen-to-screen
+      navigation uses Flutter's real `Navigator`/named routes rather than a
+      single global "current screen" variable — more idiomatic than the
+      canvas's own approach, which was a workaround for not having a router.
+- [x] One deliberate behavior change from the canvas: there, every "back"
+      button force-reset the SOS alert to idle regardless of which screen
+      it led to, because `go()` was one function for both navigation and
+      SOS reset. That's a real bug for a safety app (leaving the SOS screen
+      by accident would silently cancel an active alert with no
+      confirmation) — back buttons here are plain navigation only; SOS
+      state is untouched by navigating away.
+- Verify: `flutter analyze` clean, `flutter test` (3 SOS state-machine
+  tests) passes, `flutter build apk --debug` succeeds. User tests manually
+  on their own device/emulator from here.
 
 ### Phase 2 — Firebase
 - [ ] `flutterfire configure` (needs the user's own `firebase login` + a

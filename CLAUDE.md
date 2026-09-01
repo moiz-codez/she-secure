@@ -275,12 +275,42 @@ end to end.
   only really be judged on real hardware over real time, not a quick
   check.
 
-### Phase 5 — Distress Listening
-- [ ] Continuous mic capture via `record`
-- [ ] YAMNet inference via `tflite_flutter`
-- [ ] Confidence + sustained-duration window before auto-firing SOS
-- Verify: `flutter analyze`/`flutter build` clean; the user tests
-  real-world mic accuracy manually on their own device
+### Phase 5 — Distress Listening ✅ done
+- [x] Continuous mic capture via `record` — runs inside the same
+      background service Smart Sentinel uses (`sentinel_service.dart`),
+      gated by its own `listenOn` flag independent of Sentinel's; the
+      persistent notification's foreground-service type is now
+      `location|microphone` so either or both can be active
+- [x] YAMNet inference via `tflite_flutter` — real model, not a stub:
+      the actual `yamnet.tflite` (Google's published MediaPipe/TF-Hub
+      release, ~4 MB) plus its 521-class AudioSet label CSV are bundled
+      as assets (`assets/models/`). `lib/services/audio_detection_service.dart`
+      loads the interpreter once, finds the input tensor shaped for a
+      15600-sample (0.975 s @ 16 kHz) waveform and the output tensor
+      shaped for 521 classes by inspecting their actual shapes rather
+      than assuming fixed indices (a packaged model file's tensor order
+      isn't guaranteed), and classifies each window against "Screaming"
+      and "Crying, sobbing" by label name.
+- [x] Confidence + sustained-duration window before auto-firing SOS —
+      `lib/utils/listen_heuristic.dart` (unit-tested): sensitivity sets
+      both a confidence threshold and how many consecutive 0.975 s
+      windows must clear it — Alert fires on one hit, Balanced on two,
+      Relaxed on three — matching the screen's own copy. On a fire, the
+      background service sends the real SMS + writes real SOS history
+      immediately (via the same `_fireAlert` Smart Sentinel uses, tagged
+      with its own source string) with **no confirmation step**, exactly
+      as designed — `ListenProvider` only owns the brief "Scream
+      detected" flash before handing off to the SOS screen, which is
+      cosmetic and never gates the actual alert.
+- **Model provenance**: `assets/models/yamnet.tflite` and
+  `yamnet_class_map.csv` are Google's own published files, downloaded
+  as-is (not trained or modified by this project) — same practice as
+  committing `google-services.json`, a third-party artifact this app
+  depends on rather than something generated here.
+- Verify: `flutter analyze`/`flutter test` clean (adds 7 new listen-
+  heuristic unit tests, 18/18 total). The user tests real-world mic
+  accuracy manually on their own device, and builds the APK themselves
+  once every phase is done.
 
 ### Phase 6 — Recordings + Fake Call
 - [ ] Local video/audio/photo capture via `camera`/`path_provider`, saved
@@ -294,12 +324,15 @@ end to end.
 
 ## Verification (applies every phase)
 
-- `flutter analyze` must be clean before a phase is considered done, and
-  `flutter build apk --debug` should succeed.
+- `flutter analyze` must be clean before a phase is considered done.
 - One `flutter test` smoke test per phase for genuinely non-trivial logic
   (SOS state machine transitions, the Sentinel anomaly heuristic) — no
   framework-heavy widget test suite, just enough to catch a broken
   transition.
-- No emulator/device run as part of a phase's own completion — the user
-  tests each phase manually on their own device/emulator afterward and
-  reports back.
+- No `flutter build apk` and no emulator/device run as part of a phase's
+  own completion — the user builds and tests each phase manually on their
+  own device (connected by cable) afterward, once, and only builds a full
+  APK themselves after every phase is done. If a native/Gradle-affecting
+  change is made, it's fine to apply a fix using an already-proven pattern
+  from earlier in this repo, but report it as unverified by an actual
+  build rather than as confirmed working.

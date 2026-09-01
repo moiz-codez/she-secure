@@ -215,7 +215,7 @@ class _ListenScreenState extends State<ListenScreen> {
                     child: SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
-                        onPressed: listen.heardScream,
+                        onPressed: listen.simulate,
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppColors.textMuted(0.78),
                           side: BorderSide(color: AppColors.textMuted(0.24)),

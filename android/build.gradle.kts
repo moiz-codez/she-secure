@@ -50,6 +50,24 @@ subprojects {
     }
 }
 
+// tflite_flutter declares its own Java compileOptions at 1.11, but its
+// Kotlin compilation (auto-applied, not explicit in its build.gradle) lands
+// on this toolchain's default of JVM 21, which AGP again rejects as
+// inconsistent — same class of bug as another_telephony above, just the
+// other direction: bring its Java side up to 21 to match.
+subprojects {
+    if (project.name == "tflite_flutter") {
+        afterEvaluate {
+            extensions.findByType(com.android.build.gradle.BaseExtension::class.java)?.apply {
+                compileOptions {
+                    sourceCompatibility = JavaVersion.VERSION_21
+                    targetCompatibility = JavaVersion.VERSION_21
+                }
+            }
+        }
+    }
+}
+
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }

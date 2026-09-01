@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../services/sentinel_service.dart';
 import 'sos_provider.dart';
 
 class RoutineBlock {
@@ -132,11 +133,11 @@ class SentinelProvider extends ChangeNotifier {
 
   Future<void> _pushConfig() async {
     if (_uid == null) return;
-    if (sentinelOn && !await _service.isRunning()) {
-      await Permission.notification.request();
-      await _service.startService();
-    }
-    _service.invoke('configure', {'uid': _uid, 'sentinelOn': sentinelOn, 'sensitivity': sensitivity});
+    if (sentinelOn) await Permission.notification.request();
+    await pushBackgroundConfig(
+      {'uid': _uid, 'sentinelOn': sentinelOn, 'sensitivity': sensitivity},
+      needed: sentinelOn,
+    );
   }
 
   void unbindUser() {

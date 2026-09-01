@@ -2,7 +2,10 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:permission_handler/permission_handler.dart';
 
+import '../services/sentinel_service.dart';
 import 'sos_provider.dart';
 
 class HeardEntry {
@@ -14,22 +17,28 @@ class HeardEntry {
 }
 
 /// Distress Listening: continuous mic monitoring for a scream or sustained
-/// crying, firing SOS with no confirmation on detection. Phase 1 exposes
-/// the same "simulate a detected scream" flow as the design canvas;
-/// Phase 5 replaces the simulated trigger with real on-device YAMNet
-/// inference feeding into the same [heardScream] entry point.
+/// crying, firing SOS with no confirmation on detection. The actual mic
+/// capture and on-device YAMNet inference run in the same background
+/// service Smart Sentinel uses (`sentinel_service.dart`) — a separate
+/// isolate that keeps listening even if this app is closed. This provider
+/// just mirrors that isolate's detection events and owns the brief
+/// "Scream detected" flash before navigating, which is cosmetic (the real
+/// alert already fired by the time this event arrives).
 class ListenProvider extends ChangeNotifier {
   // ignore: prefer_initializing_formals
   ListenProvider({required SosProvider sos}) : _sos = sos;
 
   final SosProvider _sos;
+  final _service = FlutterBackgroundService();
 
+  String? _uid;
   bool listenOn = true;
   String earSensitivity = 'Balanced';
   bool detected = false;
   Timer? _detectionTimer;
   DocumentReference<Map<String, dynamic>>? _doc;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _prefsSub;
+  StreamSubscription<Map<String, dynamic>?>? _detectedSub;
 
   /// Set by the listen screen while mounted, so this provider can trigger
   /// navigation to the SOS screen on detection.
@@ -49,6 +58,7 @@ class ListenProvider extends ChangeNotifier {
       };
 
   void bindUser(String uid) {
+    _uid = uid;
     _prefsSub?.cancel();
     _doc = FirebaseFirestore.instance.collection('users').doc(uid).collection('settings').doc('preferences');
     _prefsSub = _doc!.snapshots().listen((snap) {
@@ -56,13 +66,29 @@ class ListenProvider extends ChangeNotifier {
       listenOn = data?['listenOn'] as bool? ?? true;
       earSensitivity = data?['earSensitivity'] as String? ?? 'Balanced';
       notifyListeners();
+      _pushConfig();
     });
+
+    _detectedSub ??= _service.on('screamDetected').listen((_) => _showDetected());
+  }
+
+  Future<void> _pushConfig() async {
+    if (_uid == null) return;
+    if (listenOn) await Permission.microphone.request();
+    await pushBackgroundConfig(
+      {'uid': _uid, 'listenOn': listenOn, 'earSensitivity': earSensitivity},
+      needed: listenOn,
+    );
   }
 
   void unbindUser() {
     _prefsSub?.cancel();
     _prefsSub = null;
+    _detectedSub?.cancel();
+    _detectedSub = null;
+    _service.invoke('stop');
     _doc = null;
+    _uid = null;
     listenOn = true;
     earSensitivity = 'Balanced';
     notifyListeners();
@@ -72,30 +98,42 @@ class ListenProvider extends ChangeNotifier {
     listenOn = !listenOn;
     notifyListeners();
     _doc?.set({'listenOn': listenOn}, SetOptions(merge: true));
+    _pushConfig();
   }
 
   void setSensitivity(String value) {
     earSensitivity = value;
     notifyListeners();
     _doc?.set({'earSensitivity': value}, SetOptions(merge: true));
+    _pushConfig();
   }
 
-  void heardScream() {
+  /// The real alert has already fired by the time this is called (the
+  /// background service fires it immediately on a sustained detection,
+  /// with no confirmation step) — this is just the brief on-screen flash
+  /// before handing off to the SOS screen.
+  void _showDetected() {
     detected = true;
     notifyListeners();
+    _sos.markArmedExternally();
     _detectionTimer?.cancel();
     _detectionTimer = Timer(const Duration(milliseconds: 1900), () {
       detected = false;
       notifyListeners();
-      _sos.arm();
       onDetectionEscalated?.call();
     });
   }
+
+  /// Demo button — routes through the same background service and the
+  /// same real alert-firing path as a genuine detection, rather than a
+  /// separate local simulation.
+  void simulate() => _service.invoke('simulateScream');
 
   @override
   void dispose() {
     _detectionTimer?.cancel();
     _prefsSub?.cancel();
+    _detectedSub?.cancel();
     super.dispose();
   }
 }

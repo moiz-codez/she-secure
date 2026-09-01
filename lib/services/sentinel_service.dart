@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -7,12 +8,20 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:record/record.dart';
 
 import '../app.dart';
 import '../firebase_options.dart';
+import '../utils/listen_heuristic.dart';
 import '../utils/sentinel_heuristic.dart';
+import 'audio_detection_service.dart';
 import 'location_service.dart';
 import 'sms_service.dart';
+
+/// YAMNet's fixed input window: 0.975s of mono audio at 16kHz.
+const _yamnetSampleRate = 16000;
+const _yamnetWindowSamples = 15600;
+const _screamLabels = ['Screaming', 'Crying, sobbing'];
 
 const sentinelServiceChannelId = 'sentinel_service';
 const sentinelServiceNotificationId = 8801;
@@ -53,7 +62,7 @@ Future<void> initializeSentinelService() async {
       foregroundServiceNotificationId: sentinelServiceNotificationId,
       initialNotificationTitle: 'Smart Sentinel',
       initialNotificationContent: 'Watching · learning your routine',
-      foregroundServiceTypes: [AndroidForegroundType.location],
+      foregroundServiceTypes: [AndroidForegroundType.location, AndroidForegroundType.microphone],
     ),
   );
 }
@@ -84,6 +93,19 @@ Future<void> initializeMainIsolateNotifications() async {
   }
 }
 
+/// Starts the background service if it isn't already running and [needed]
+/// is true, then forwards [fields] as a 'configure' message. Used by both
+/// SentinelProvider and ListenProvider — the background isolate above only
+/// updates whichever fields are present in [fields], so either can call
+/// this independently without clobbering the other's config.
+Future<void> pushBackgroundConfig(Map<String, dynamic> fields, {required bool needed}) async {
+  final service = FlutterBackgroundService();
+  if (needed && !await service.isRunning()) {
+    await service.startService();
+  }
+  service.invoke('configure', fields);
+}
+
 // ---- Background isolate state — plain top-level vars, this isolate lives
 // as long as the foreground service does. ----
 String? _uid;
@@ -94,6 +116,13 @@ Timer? _checkInTimer;
 int _checkInSecondsLeft = 0;
 bool _checkInActive = false;
 int _anomalyStreak = 0;
+
+bool _listenOn = false;
+String _earSensitivity = 'Balanced';
+AudioRecorder? _recorder;
+StreamSubscription<Uint8List>? _micSub;
+final List<int> _micBuffer = []; // raw little-endian PCM16 bytes
+int _screamStreak = 0;
 
 @pragma('vm:entry-point')
 void _onStart(ServiceInstance service) async {
@@ -107,16 +136,37 @@ void _onStart(ServiceInstance service) async {
 
   service.on('configure').listen((event) {
     if (event == null) return;
-    _uid = event['uid'] as String?;
-    final wasOn = _sentinelOn;
-    _sentinelOn = event['sentinelOn'] as bool? ?? false;
-    _sensitivity = event['sensitivity'] as String? ?? 'Balanced';
-    if (_sentinelOn && !wasOn) {
-      _sample(notifications, service); // sample right away, then every 5 min
+    if (event.containsKey('uid')) _uid = event['uid'] as String?;
+
+    if (event.containsKey('sentinelOn')) {
+      final wasOn = _sentinelOn;
+      _sentinelOn = event['sentinelOn'] as bool? ?? false;
+      _sensitivity = event['sensitivity'] as String? ?? _sensitivity;
+      if (_sentinelOn && !wasOn) {
+        _sample(notifications, service); // sample right away, then every 5 min
+        _sampleTimer?.cancel();
+        _sampleTimer = Timer.periodic(const Duration(minutes: 5), (_) => _sample(notifications, service));
+      } else if (!_sentinelOn && wasOn) {
+        _sampleTimer?.cancel();
+      }
+    }
+
+    if (event.containsKey('listenOn')) {
+      final wasOn = _listenOn;
+      _listenOn = event['listenOn'] as bool? ?? false;
+      _earSensitivity = event['earSensitivity'] as String? ?? _earSensitivity;
+      if (_listenOn && !wasOn) {
+        _startMicStream(service);
+      } else if (!_listenOn && wasOn) {
+        _stopMicStream();
+      }
+    }
+
+    if (!_sentinelOn && !_listenOn) {
       _sampleTimer?.cancel();
-      _sampleTimer = Timer.periodic(const Duration(minutes: 5), (_) => _sample(notifications, service));
-    } else if (!_sentinelOn && wasOn) {
-      _sampleTimer?.cancel();
+      _checkInTimer?.cancel();
+      _stopMicStream();
+      service.stopSelf();
     }
   });
 
@@ -131,11 +181,73 @@ void _onStart(ServiceInstance service) async {
   service.on('confirm').listen((_) => _endCheckIn(escalated: false, notifications: notifications, service: service));
   service.on('escalateNow').listen((_) => _endCheckIn(escalated: true, notifications: notifications, service: service));
 
+  service.on('simulateScream').listen((_) => _fireScream(service));
+
   service.on('stop').listen((_) {
     _sampleTimer?.cancel();
     _checkInTimer?.cancel();
+    _stopMicStream();
     service.stopSelf();
   });
+}
+
+void _startMicStream(ServiceInstance service) async {
+  final recorder = AudioRecorder();
+  if (!await recorder.hasPermission()) {
+    recorder.dispose();
+    return;
+  }
+  final stream = await recorder.startStream(
+    const RecordConfig(encoder: AudioEncoder.pcm16bits, sampleRate: _yamnetSampleRate, numChannels: 1),
+  );
+  _recorder = recorder;
+  _micBuffer.clear();
+  _screamStreak = 0;
+  _micSub = stream.listen((chunk) => _onAudioChunk(chunk, service));
+}
+
+void _stopMicStream() {
+  _micSub?.cancel();
+  _micSub = null;
+  _recorder?.dispose();
+  _recorder = null;
+  _micBuffer.clear();
+}
+
+const _bytesPerWindow = _yamnetWindowSamples * 2; // PCM16 = 2 bytes/sample
+
+void _onAudioChunk(Uint8List chunk, ServiceInstance service) {
+  _micBuffer.addAll(chunk);
+  while (_micBuffer.length >= _bytesPerWindow) {
+    final windowBytes = Uint8List.fromList(_micBuffer.sublist(0, _bytesPerWindow));
+    _micBuffer.removeRange(0, _bytesPerWindow);
+    unawaited(_classifyWindow(windowBytes, service));
+  }
+}
+
+Future<void> _classifyWindow(Uint8List bytes, ServiceInstance service) async {
+  final byteData = ByteData.sublistView(bytes);
+  final window = List<double>.generate(
+    _yamnetWindowSamples,
+    (i) => byteData.getInt16(i * 2, Endian.little) / 32768.0,
+  );
+
+  final confidence = await AudioDetectionService.classify(window, _screamLabels);
+  final decision = checkScreamConfidence(
+    confidence: confidence,
+    sensitivity: _earSensitivity,
+    consecutiveHits: _screamStreak,
+  );
+  _screamStreak = decision.isHit ? _screamStreak + 1 : 0;
+  if (decision.shouldFire) {
+    _screamStreak = 0;
+    await _fireScream(service);
+  }
+}
+
+Future<void> _fireScream(ServiceInstance service) async {
+  await _fireAlert(source: 'Distress Listening');
+  service.invoke('screamDetected');
 }
 
 Future<void> _sample(FlutterLocalNotificationsPlugin notifications, ServiceInstance service) async {
@@ -250,7 +362,7 @@ Future<void> _endCheckIn({
   await notifications.cancel(id: sentinelCheckinNotificationId);
 
   if (escalated) {
-    await _fireAlert();
+    await _fireAlert(source: 'Smart Sentinel');
   }
   service.invoke('checkinEnded', {'escalated': escalated});
 }
@@ -260,7 +372,7 @@ Future<void> _endCheckIn({
 /// through `SosProvider.arm()`) because this background isolate has no
 /// access to that main-isolate instance; `SosProvider.markArmedExternally`
 /// just mirrors the resulting armed state if the app happens to be open.
-Future<void> _fireAlert() async {
+Future<void> _fireAlert({required String source}) async {
   final uid = _uid;
   if (uid == null) return;
 
@@ -273,7 +385,7 @@ Future<void> _fireAlert() async {
   unawaited(usersDoc.collection('sosHistory').add({
     'where': where,
     'when': FieldValue.serverTimestamp(),
-    'detail': 'Alert sent (Smart Sentinel)',
+    'detail': 'Alert sent ($source)',
   }));
 
   final contactsSnapshot = await usersDoc.collection('contacts').get();

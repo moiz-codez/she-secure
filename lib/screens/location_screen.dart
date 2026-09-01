@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+import 'package:geolocator/geolocator.dart' show Position;
 import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -58,26 +60,51 @@ class _LocationScreenState extends State<LocationScreen> {
   double? _lat;
   double? _lng;
   double? _accuracy;
+  DateTime? _lastUpdated;
   bool _loading = true;
+  bool _permissionDenied = false;
+  StreamSubscription<Position>? _positionSub;
+  Timer? _agoTicker;
 
   @override
   void initState() {
     super.initState();
-    _refresh();
+    _positionSub = LocationService.watchPosition().listen(_onPosition, onDone: () {
+      if (mounted && _loading) setState(() => _permissionDenied = true);
+    });
+    // Re-render every 15s just to refresh the "updated Xs ago" text between
+    // fixes, not to re-fetch anything.
+    _agoTicker = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (mounted) setState(() {});
+    });
   }
 
-  Future<void> _refresh() async {
-    final position = await LocationService.getCurrentPosition();
+  @override
+  void dispose() {
+    _positionSub?.cancel();
+    _agoTicker?.cancel();
+    super.dispose();
+  }
+
+  void _onPosition(Position position) {
     if (!mounted) return;
     setState(() {
       _loading = false;
-      _lat = position?.latitude;
-      _lng = position?.longitude;
-      _accuracy = position?.accuracy;
+      _lat = position.latitude;
+      _lng = position.longitude;
+      _accuracy = position.accuracy;
+      _lastUpdated = DateTime.now();
     });
-    if (position != null) {
-      _map?.animateCamera(CameraUpdate.newLatLng(LatLng(position.latitude, position.longitude)));
-    }
+    _map?.animateCamera(CameraUpdate.newLatLng(LatLng(position.latitude, position.longitude)));
+  }
+
+  String get _updatedLabel {
+    final last = _lastUpdated;
+    if (last == null) return 'updated just now';
+    final seconds = DateTime.now().difference(last).inSeconds;
+    if (seconds < 10) return 'updated just now';
+    if (seconds < 60) return 'updated ${seconds}s ago';
+    return 'updated ${(seconds / 60).floor()} min ago';
   }
 
   /// Same Google Maps link format the SOS SMS already uses — a snapshot of
@@ -175,9 +202,11 @@ class _LocationScreenState extends State<LocationScreen> {
                                 style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
                               ),
                               Text(
-                                _accuracy == null
+                                _permissionDenied
                                     ? 'Turn on location permission to share where you are'
-                                    : 'accurate to ${_accuracy!.round()} m · updated just now',
+                                    : _accuracy == null
+                                        ? 'Getting your location…'
+                                        : 'accurate to ${_accuracy!.round()} m · $_updatedLabel',
                                 style: TextStyle(fontSize: 11.5, color: AppColors.textMuted(0.45)),
                               ),
                             ],

@@ -16,4 +16,18 @@ class LocationService {
       return null;
     }
   }
+
+  /// A continuous fix, not a single snapshot — the Location screen's pin
+  /// (and the "accurate to Xm" reading) should track you as you move, the
+  /// same way any real map app's live location does. Emits a new [Position]
+  /// roughly every 5m of movement; yields nothing if permission is denied
+  /// or location services are off.
+  static Stream<Position> watchPosition() async* {
+    if (!await Geolocator.isLocationServiceEnabled()) return;
+    final status = await Permission.locationWhenInUse.request();
+    if (!status.isGranted) return;
+    yield* Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 5),
+    );
+  }
 }

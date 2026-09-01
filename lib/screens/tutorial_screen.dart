@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../theme/app_colors.dart';
-import '../widgets/status_pill.dart';
 
 class _Lesson {
   const _Lesson({required this.n, required this.title, required this.body});
@@ -12,11 +12,10 @@ class _Lesson {
 }
 
 class _Video {
-  const _Video({required this.title, required this.dur, required this.src});
+  const _Video({required this.title, required this.url});
 
   final String title;
-  final String dur;
-  final String src;
+  final String url;
 }
 
 const _lessons = [
@@ -31,9 +30,9 @@ const _lessons = [
 ];
 
 const _videos = [
-  _Video(title: 'Wrist release and escape', dur: '6:12', src: 'youtube.com/watch?v=…'),
-  _Video(title: 'Using your bag and dupatta', dur: '4:48', src: 'youtube.com/watch?v=…'),
-  _Video(title: 'Safe travel on a rickshaw', dur: '8:03', src: 'youtube.com/watch?v=…'),
+  _Video(title: 'Wrist release and escape', url: 'https://youtu.be/KbS7dk4YTKg'),
+  _Video(title: '5 Easy Self-Defense Moves', url: 'https://youtu.be/KVpxP3ZZtAc'),
+  _Video(title: '5 Self-Defense Items you should carry', url: 'https://youtu.be/7QkMQfpaZPc'),
 ];
 
 class TutorialScreen extends StatelessWidget {
@@ -120,7 +119,7 @@ class TutorialScreen extends StatelessWidget {
                             margin: const EdgeInsets.only(bottom: 11),
                             child: InkWell(
                               borderRadius: BorderRadius.circular(12),
-                              onTap: () => showNotBuiltSnack(context),
+                              onTap: () => launchUrl(Uri.parse(v.url), mode: LaunchMode.externalApplication),
                               child: Container(
                                 padding: const EdgeInsets.all(11),
                                 decoration: BoxDecoration(
@@ -142,14 +141,7 @@ class TutorialScreen extends StatelessWidget {
                                     ),
                                     const SizedBox(width: 13),
                                     Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(v.title, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w500)),
-                                          const SizedBox(height: 3),
-                                          Text('${v.dur} · ${v.src}', style: TextStyle(fontSize: 11.5, color: AppColors.textMuted(0.45))),
-                                        ],
-                                      ),
+                                      child: Text(v.title, style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w500)),
                                     ),
                                     Icon(Icons.open_in_new_rounded, size: 16, color: AppColors.textMuted(0.35)),
                                   ],
@@ -157,16 +149,6 @@ class TutorialScreen extends StatelessWidget {
                               ),
                             ),
                           ),
-                        Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              'Videos open in YouTube. Give me the real links and I will drop them in.',
-                              style: TextStyle(fontSize: 11.5, height: 1.55, color: AppColors.textMuted(0.4)),
-                            ),
-                          ),
-                        ),
                       ],
                     ),
                   ),

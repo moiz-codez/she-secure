@@ -6,6 +6,7 @@ import '../../app.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/permission_service.dart';
 import '../../theme/app_colors.dart';
+import '../../utils/validators.dart';
 import '../../widgets/app_logo.dart';
 
 enum _AuthTab { login, signup }
@@ -132,6 +133,11 @@ class _LoginFormState extends State<_LoginForm> {
   }
 
   Future<void> _submit() async {
+    final emailError = validateEmail(_email.text);
+    if (emailError != null) {
+      setState(() => _error = emailError);
+      return;
+    }
     setState(() {
       _submitting = true;
       _error = null;
@@ -235,6 +241,16 @@ class _SignupFormState extends State<_SignupForm> {
   }
 
   Future<void> _submit() async {
+    final emailError = validateEmail(_email.text);
+    if (emailError != null) {
+      setState(() => _error = emailError);
+      return;
+    }
+    final passwordError = validatePassword(_password.text);
+    if (passwordError != null) {
+      setState(() => _error = passwordError);
+      return;
+    }
     if (_password.text != _confirm.text) {
       setState(() => _error = 'Passwords don\'t match.');
       return;
@@ -341,7 +357,7 @@ class _SignupFormState extends State<_SignupForm> {
   }
 }
 
-class _LabeledField extends StatelessWidget {
+class _LabeledField extends StatefulWidget {
   const _LabeledField({
     required this.label,
     required this.hint,
@@ -357,17 +373,36 @@ class _LabeledField extends StatelessWidget {
   final TextInputType? keyboardType;
 
   @override
+  State<_LabeledField> createState() => _LabeledFieldState();
+}
+
+class _LabeledFieldState extends State<_LabeledField> {
+  late bool _obscured = widget.obscure;
+
+  @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: TextStyle(fontSize: 12, color: AppColors.textMuted(0.68))),
+        Text(widget.label, style: TextStyle(fontSize: 12, color: AppColors.textMuted(0.68))),
         const SizedBox(height: 6),
         TextField(
-          controller: controller,
-          obscureText: obscure,
-          keyboardType: keyboardType,
-          decoration: InputDecoration(hintText: hint),
+          controller: widget.controller,
+          obscureText: _obscured,
+          keyboardType: widget.keyboardType,
+          decoration: InputDecoration(
+            hintText: widget.hint,
+            suffixIcon: widget.obscure
+                ? IconButton(
+                    onPressed: () => setState(() => _obscured = !_obscured),
+                    icon: Icon(
+                      _obscured ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                      size: 19,
+                      color: AppColors.textMuted(0.5),
+                    ),
+                  )
+                : null,
+          ),
         ),
       ],
     );

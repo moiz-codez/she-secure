@@ -126,8 +126,15 @@ class ListenProvider extends ChangeNotifier {
 
   /// Demo button — routes through the same background service and the
   /// same real alert-firing path as a genuine detection, rather than a
-  /// separate local simulation.
-  void simulate() => _service.invoke('simulateScream');
+  /// separate local simulation. The background service only runs while
+  /// `listenOn` is true, so this ensures it's started first — otherwise,
+  /// with Distress Listening toggled off, the invoke below would reach no
+  /// running isolate and silently do nothing (that was the bug: this demo
+  /// button only ever worked when the feature happened to already be on).
+  Future<void> simulate() async {
+    await pushBackgroundConfig({}, needed: true);
+    _service.invoke('simulateScream');
+  }
 
   @override
   void dispose() {

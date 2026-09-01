@@ -229,17 +229,51 @@ end to end.
   apk --debug` succeeds. User tests location, contact picker, and SMS send
   manually on their own device.
 
-### Phase 4 — Smart Sentinel
-- [ ] `flutter_background_service` loop logging periodic location+speed
-      samples
-- [ ] Baseline/anomaly heuristic (off-route distance + arrival-time window
-      + speed threshold)
-- [ ] Silent vibrate check-in notification, 30s auto-escalate timer,
-      hold-to-confirm vs. duress-hold-fires-anyway interaction
-- Verify: `flutter analyze`/`flutter build` clean; the user tests manually
-  on a real device — background survival across OEM battery optimization
-  can only really be judged on real hardware over real time, not a quick
-  check
+### Phase 4 — Smart Sentinel ✅ done
+- [x] `flutter_background_service` foreground-service loop, sampling
+      location+speed every 5 minutes into `users/{uid}/sentinelSamples`
+      while Sentinel is on — a real foreground service (Android's
+      `location` type), not a demo timer, so it keeps running with the app
+      closed as long as the OS doesn't kill it
+- [x] Baseline/anomaly heuristic (`lib/utils/sentinel_heuristic.dart`,
+      unit-tested) — compares each sample against recent same-weekday,
+      similar-time-of-day samples: off-route (distance from that baseline's
+      centroid) and off-pace (running when usually walking, or stopped
+      when usually moving). The "arrival-time window" signal from the plan
+      is folded into how the baseline is selected (same weekday, ±90 min)
+      rather than tracked as a separate third check. Sensitivity maps onto
+      the canvas's own copy: Alert fires on either signal alone, Balanced
+      needs both together, Relaxed needs both together *and* sustained
+      across two consecutive samples. ponytail: centroid + speed-range, not
+      real route-corridor matching — upgrade to path matching against a
+      stored polyline if false positives prove too high with real usage.
+- [x] Silent vibrate check-in, 30s auto-escalate, hold-to-confirm vs.
+      duress-hold-fires-anyway — the existing check-in UI/timer from Phase 1
+      is unchanged, but the *authoritative* 30s timer and the escalate
+      decision now live entirely in the background service (a separate
+      isolate with no access to in-app state), not in the app. `SentinelProvider`
+      just mirrors that isolate's state over `invoke`/`on` so the on-screen
+      countdown and buttons still work exactly as before when the app is
+      open. A tap on the vibrate-only notification opens the check-in
+      screen; the escalation itself never depends on that tap happening.
+- **Deliberate simplification**: no inline "I'm safe" / "send now" buttons
+  on the notification itself — tapping it opens the app to the same
+  hold-to-confirm screen instead. The safety-critical direction (auto-fire
+  on timeout, no user action required) is untouched; only the "confirm
+  you're fine" convenience path needs one extra tap to open the app, which
+  is normal Android notification behavior anyway.
+- **Honest gap**: a background-fired alert's SOS history record is real
+  (written straight to Firestore, same as any other alert), but if the app
+  is reopened afterward the SOS screen won't show "armed" unless it was
+  already open at the moment the alert fired (`SosProvider.state` is local,
+  not Firestore-backed) — `markArmedExternally()` covers the "app was
+  open" case; the "app was closed, then reopened after" case is a cosmetic
+  gap, not a missed alert.
+- Verify: `flutter analyze`/`flutter build` clean, `flutter test` passing
+  (including the new heuristic unit tests). The user tests manually on a
+  real device — background survival across OEM battery optimization can
+  only really be judged on real hardware over real time, not a quick
+  check.
 
 ### Phase 5 — Distress Listening
 - [ ] Continuous mic capture via `record`

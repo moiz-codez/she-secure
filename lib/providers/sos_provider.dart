@@ -93,6 +93,24 @@ class SosProvider extends ChangeNotifier {
 
   DocumentReference<Map<String, dynamic>>? _activeHistoryDoc;
 
+  /// Reflects an alert that was already sent elsewhere — Smart Sentinel's
+  /// background service fires its own real location+SMS send directly
+  /// (it runs in a separate isolate with no access to this instance), then
+  /// calls this just so the SOS screen shows "armed" if the app happens to
+  /// be open. Unlike [arm], this never re-sends anything.
+  void markArmedExternally() {
+    _countdownTimer?.cancel();
+    state = SosState.armed;
+    elapsed = 0;
+    acked = 0;
+    notifyListeners();
+    _elapsedTimer?.cancel();
+    _elapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      elapsed += 1;
+      notifyListeners();
+    });
+  }
+
   /// Arms the alert immediately, skipping the hold+countdown — used by
   /// Smart Sentinel's auto-escalation and Distress Listening's
   /// no-confirmation trigger.

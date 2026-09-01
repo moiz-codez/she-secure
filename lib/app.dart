@@ -27,6 +27,10 @@ import 'screens/splash_screen.dart';
 import 'screens/tutorial_screen.dart';
 import 'theme/app_theme.dart';
 
+/// Lets code outside the widget tree (the notification-tap handler for
+/// Smart Sentinel's check-in ping) navigate without a BuildContext.
+final navigatorKey = GlobalKey<NavigatorState>();
+
 /// Named route constants — screens navigate with these rather than magic
 /// strings scattered through the codebase.
 class Routes {
@@ -74,6 +78,7 @@ class SheSecureApp extends StatelessWidget {
       ],
       child: _AuthBinder(
         child: MaterialApp(
+          navigatorKey: navigatorKey,
           title: 'She Secure',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.dark,

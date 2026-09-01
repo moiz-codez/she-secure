@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import 'sos_provider.dart';
 
@@ -28,28 +30,33 @@ class AnomalyEntry {
   final String how;
 }
 
-/// Smart Sentinel: routine/anomaly monitoring. Phase 1 exposes the same
-/// UI-facing state and the "simulate" / check-in escalation flow the
-/// design canvas modeled; Phase 4 replaces the simulated trigger with a
-/// real background location+motion service feeding into the same
-/// [raiseCheckIn] entry point, so the check-in/escalation logic below
-/// doesn't need to change.
+/// Smart Sentinel: routine/anomaly monitoring. The actual sampling loop,
+/// baseline check, and 30-second check-in timer all live in the background
+/// service (`sentinel_service.dart`) — a separate isolate that keeps
+/// running even if this app is closed, which is the whole point. This
+/// provider is a thin mirror of that isolate's state (via `invoke`/`on`)
+/// plus the Firestore-backed on/off + sensitivity settings.
 class SentinelProvider extends ChangeNotifier {
   // ignore: prefer_initializing_formals
   SentinelProvider({required SosProvider sos}) : _sos = sos;
 
   final SosProvider _sos;
+  final _service = FlutterBackgroundService();
 
+  String? _uid;
   bool sentinelOn = true;
   String sensitivity = 'Balanced';
   DocumentReference<Map<String, dynamic>>? _doc;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _prefsSub;
+  StreamSubscription<Map<String, dynamic>?>? _startedSub;
+  StreamSubscription<Map<String, dynamic>?>? _tickSub;
+  StreamSubscription<Map<String, dynamic>?>? _endedSub;
 
-  // Check-in state (the silent "are you safe?" prompt).
+  // Check-in state (the silent "are you safe?" prompt) — mirrored from the
+  // background service, not owned here.
   bool checkInActive = false;
   int checkInSecondsLeft = 30;
   String checkInReason = '';
-  Timer? _checkInTimer;
 
   /// Set by the check-in screen while it's mounted so this provider can
   /// trigger navigation on escalation without owning a BuildContext itself.
@@ -90,6 +97,7 @@ class SentinelProvider extends ChangeNotifier {
       };
 
   void bindUser(String uid) {
+    _uid = uid;
     _prefsSub?.cancel();
     _doc = FirebaseFirestore.instance.collection('users').doc(uid).collection('settings').doc('preferences');
     _prefsSub = _doc!.snapshots().listen((snap) {
@@ -97,15 +105,55 @@ class SentinelProvider extends ChangeNotifier {
       sentinelOn = data?['sentinelOn'] as bool? ?? true;
       sensitivity = data?['sensitivity'] as String? ?? 'Balanced';
       notifyListeners();
+      _pushConfig();
     });
+
+    _startedSub ??= _service.on('checkinStarted').listen((event) {
+      checkInActive = true;
+      checkInReason = event?['reason'] as String? ?? '';
+      checkInSecondsLeft = event?['secondsLeft'] as int? ?? 30;
+      notifyListeners();
+    });
+    _tickSub ??= _service.on('checkinTick').listen((event) {
+      checkInSecondsLeft = event?['secondsLeft'] as int? ?? checkInSecondsLeft;
+      notifyListeners();
+    });
+    _endedSub ??= _service.on('checkinEnded').listen((event) {
+      checkInActive = false;
+      notifyListeners();
+      if (event?['escalated'] == true) {
+        _sos.markArmedExternally();
+        onEscalated?.call();
+      } else {
+        onConfirmedSafe?.call();
+      }
+    });
+  }
+
+  Future<void> _pushConfig() async {
+    if (_uid == null) return;
+    if (sentinelOn && !await _service.isRunning()) {
+      await Permission.notification.request();
+      await _service.startService();
+    }
+    _service.invoke('configure', {'uid': _uid, 'sentinelOn': sentinelOn, 'sensitivity': sensitivity});
   }
 
   void unbindUser() {
     _prefsSub?.cancel();
     _prefsSub = null;
+    _startedSub?.cancel();
+    _startedSub = null;
+    _tickSub?.cancel();
+    _tickSub = null;
+    _endedSub?.cancel();
+    _endedSub = null;
+    _service.invoke('stop');
     _doc = null;
+    _uid = null;
     sentinelOn = true;
     sensitivity = 'Balanced';
+    checkInActive = false;
     notifyListeners();
   }
 
@@ -113,57 +161,33 @@ class SentinelProvider extends ChangeNotifier {
     sentinelOn = !sentinelOn;
     notifyListeners();
     _doc?.set({'sentinelOn': sentinelOn}, SetOptions(merge: true));
+    _pushConfig();
   }
 
   void setSensitivity(String value) {
     sensitivity = value;
     notifyListeners();
     _doc?.set({'sensitivity': value}, SetOptions(merge: true));
+    _pushConfig();
   }
 
-  void raiseCheckIn(String reason) {
-    _checkInTimer?.cancel();
-    checkInActive = true;
-    checkInReason = reason;
-    checkInSecondsLeft = 30;
-    notifyListeners();
-    _checkInTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      checkInSecondsLeft -= 1;
-      if (checkInSecondsLeft <= 0) {
-        timer.cancel();
-        _escalate();
-      } else {
-        notifyListeners();
-      }
-    });
-  }
-
-  void confirmSafe() {
-    _checkInTimer?.cancel();
-    checkInActive = false;
-    notifyListeners();
-    onConfirmedSafe?.call();
-  }
+  /// Forwards the on-screen "I am safe" confirmation to the background
+  /// service, which owns the actual timer.
+  void confirmSafe() => _service.invoke('confirm');
 
   /// Fired by a sustained hold on "I am safe" (duress) or the explicit
-  /// "send the alert now" button.
-  void escalateNow() => _escalate();
+  /// "send the alert now" button — also forwarded, so there is exactly one
+  /// place (the background service) that ever decides to fire.
+  void escalateNow() => _service.invoke('escalateNow');
 
-  void _escalate() {
-    _checkInTimer?.cancel();
-    checkInActive = false;
-    _sos.arm();
-    onEscalated?.call();
-  }
-
-  void simulate() {
-    raiseCheckIn('You are 2.4 km off your usual route home and moving at running pace.');
-  }
+  void simulate() => _service.invoke('simulateCheckIn');
 
   @override
   void dispose() {
-    _checkInTimer?.cancel();
     _prefsSub?.cancel();
+    _startedSub?.cancel();
+    _tickSub?.cancel();
+    _endedSub?.cancel();
     super.dispose();
   }
 }

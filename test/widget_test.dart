@@ -4,11 +4,12 @@
 // widget tree is needed.
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:she_secure/providers/contacts_provider.dart';
 import 'package:she_secure/providers/sos_provider.dart';
 
 void main() {
   testWidgets('SOS: countdown then arm, with contact-ack timeline', (tester) async {
-    final sos = SosProvider();
+    final sos = SosProvider(contacts: ContactsProvider());
     addTearDown(sos.dispose);
 
     sos.beginCountdown();
@@ -34,7 +35,7 @@ void main() {
   });
 
   testWidgets('SOS: cancelling during countdown returns to idle without arming', (tester) async {
-    final sos = SosProvider();
+    final sos = SosProvider(contacts: ContactsProvider());
     addTearDown(sos.dispose);
 
     sos.beginCountdown();
@@ -53,7 +54,7 @@ void main() {
   });
 
   testWidgets('SOS: arm() fires immediately, bypassing hold/countdown (AI escalation path)', (tester) async {
-    final sos = SosProvider();
+    final sos = SosProvider(contacts: ContactsProvider());
     addTearDown(sos.dispose);
 
     sos.arm();

@@ -59,7 +59,9 @@ class SheSecureApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => ContactsProvider()),
-        ChangeNotifierProvider(create: (_) => SosProvider()),
+        ChangeNotifierProvider(
+          create: (context) => SosProvider(contacts: context.read<ContactsProvider>()),
+        ),
         ChangeNotifierProvider(create: (_) => SettingsProvider()),
         ChangeNotifierProvider(create: (_) => FakeCallProvider()),
         ChangeNotifierProvider(create: (_) => RecordingsProvider()),

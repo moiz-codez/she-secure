@@ -40,7 +40,22 @@ dependencies:
   firebase_core: ^4.14.0
   firebase_auth: ^6.6.1
   cloud_firestore: ^6.9.0
+  flutter_contacts: ^2.3.1
+  geolocator: ^14.0.3
+  maplibre_gl: ^0.27.0
+  permission_handler: ^13.0.1
+  url_launcher: ^6.3.2
+  another_telephony: ^0.4.1
 
+
+# permission_handler_android 14.0.0 requires Android SDK Platform 37, whose
+# auto-installed package on this machine doesn't match the "android-37"
+# target hash Gradle looks for (a preview/point-release SDK naming quirk).
+# Pinned to the prior stable release, which targets the already-working
+# compileSdk 36 — remove this override once SDK Platform 37 installs cleanly
+# or a permission_handler_android release fixes the mismatch.
+dependency_overrides:
+  permission_handler_android: 13.0.1
 
 dev_dependencies:
   flutter_test:

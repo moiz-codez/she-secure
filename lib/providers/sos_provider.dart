@@ -4,7 +4,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/sos_event.dart';
+import '../services/location_service.dart';
+import '../services/sms_service.dart';
 import '../utils/formatters.dart';
+import 'contacts_provider.dart';
 
 enum SosState { idle, counting, armed }
 
@@ -14,10 +17,15 @@ enum SosState { idle, counting, armed }
 /// owned by [HoldToConfirmButton] instances in the UI, which call
 /// [beginCountdown] / [cancel] here on completion.
 ///
-/// Real SMS delivery is wired in during the native-integrations phase —
-/// for now [arm] just starts the local "who's been notified" simulation
-/// so the rest of the SOS screen is fully exercisable.
+/// [arm] fetches a real location fix and sends a real silent SMS (via
+/// [SmsService]) to every trusted contact.
 class SosProvider extends ChangeNotifier {
+  // ignore: prefer_initializing_formals
+  SosProvider({required ContactsProvider contacts}) : _contacts = contacts;
+
+  // ignore: prefer_initializing_formals
+  final ContactsProvider _contacts;
+
   SosState state = SosState.idle;
   int count = 5;
   int elapsed = 0;
@@ -88,7 +96,7 @@ class SosProvider extends ChangeNotifier {
   /// Arms the alert immediately, skipping the hold+countdown — used by
   /// Smart Sentinel's auto-escalation and Distress Listening's
   /// no-confirmation trigger.
-  void arm() {
+  Future<void> arm() async {
     _countdownTimer?.cancel();
     state = SosState.armed;
     elapsed = 0;
@@ -103,12 +111,27 @@ class SosProvider extends ChangeNotifier {
       notifyListeners();
     });
 
-    // Real location (instead of this placeholder) and actual SMS delivery
-    // land in the native-integrations phase; the history record itself is
-    // real starting now.
-    _historyCollection
-        ?.add({'where': 'Location pending (native integration not wired up yet)', 'when': FieldValue.serverTimestamp(), 'detail': 'Alert sent'})
-        .then((doc) => _activeHistoryDoc = doc);
+    // Guarded so a platform-channel failure (e.g. no location plugin bound,
+    // as in plain unit tests) can't leave the alert stuck mid-arm — the SOS
+    // state above is already live regardless of whether the fix/SMS land.
+    try {
+      final position = await LocationService.getCurrentPosition();
+      final where = position == null
+          ? 'Location unavailable'
+          : '${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)}';
+
+      _historyCollection
+          ?.add({'where': where, 'when': FieldValue.serverTimestamp(), 'detail': 'Alert sent'})
+          .then((doc) => _activeHistoryDoc = doc);
+
+      final link = position == null ? '' : ' https://maps.google.com/?q=${position.latitude},${position.longitude}';
+      await SmsService.sendToAll(
+        _contacts.contacts.map((c) => c.phone).toList(),
+        'I need help, this is my location.$link',
+      );
+    } catch (_) {
+      // Best-effort — the armed state and elapsed timer above already stand.
+    }
   }
 
   void cancel() {

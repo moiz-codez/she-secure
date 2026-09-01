@@ -179,14 +179,55 @@ end to end.
   apk --debug` succeeds. User tests sign up, sign in, sign out, and the
   Firestore round-trip (contacts persist across a logout/login) manually.
 
-### Phase 3 — Native device integrations
-- [ ] `flutter_contacts` picker on the Trusted Contacts screen
-- [ ] `geolocator` + `maplibre_gl` live-location map with a pulsing marker
-- [ ] Real silent SMS send (`SmsManager`) wired into the SOS hold flow
-- [ ] `permission_handler` prompts for location/contacts/SMS
-- [ ] `url_launcher` for `tel:` and YouTube links
-- Verify: `flutter analyze`/`flutter build` clean; the user tests location,
-  contact picker, and SMS send manually on their own device
+### Phase 3 — Native device integrations ✅ done
+- [x] `flutter_contacts` picker on the Trusted Contacts screen — "From
+      phone" opens the real native OS picker (`FlutterContacts.native.showPicker`)
+- [x] `geolocator` + `maplibre_gl` live-location map with a pulsing marker —
+      the raw-OSM raster style is built inline (no key), camera centers on
+      a real GPS fix, and the "pulsing marker" is a Flutter-animated dot
+      pinned to the map's (always-recentered) center rather than a native
+      map annotation — same visual as the canvas, simpler to build and
+      keep centered on a live-updating fix
+- [x] Real silent SMS send (`SmsManager`, via `another_telephony`) wired
+      into `SosProvider.arm()` — fetches a real location fix, writes it
+      (as `lat, lng` — no `geocoding` package in the locked list, so no
+      reverse-geocoded street address) to the SOS history doc, and sends
+      every trusted contact a real SMS with a Google Maps link
+- [x] `permission_handler` prompts for location/contacts/SMS — Settings'
+      "Device permissions" section now reads real OS permission status and
+      its "Allow" buttons actually request permission
+- [x] `url_launcher` for `tel:` — wired on the SOS screen's "Call 15" and
+      every Location-screen helpline row. YouTube links in the Tutorial
+      screen are left as still-fake placeholders since their `src` values
+      aren't real URLs yet (the screen's own copy already says as much) —
+      wiring `url_launcher` there is a one-line change once real links
+      exist
+- **Android/Gradle fallout from this being a very new toolchain** (AGP
+  9.0.1 + Gradle 9.1 + Kotlin 2.3.20, whatever the current Flutter
+  template scaffolds) that three plugins in this phase haven't fully
+  caught up to yet — each fixed once, in `android/build.gradle.kts` or
+  `pubspec.yaml`, rather than worked around per-build:
+  - `maplibre_gl` only applies the classic Kotlin Gradle Plugin when
+    AGP < 9, assuming AGP 9's built-in Kotlin provides the `kotlin {}`
+    extension it needs otherwise — but this project's `gradle.properties`
+    (set by the Flutter template itself) has that built-in support turned
+    off, so the extension never existed. Fixed with a `subprojects` block
+    that applies KGP to just that module.
+  - `another_telephony` pins its own Kotlin compilation to JVM 1.8 but
+    leaves its Java compilation on the toolchain's default (11), which AGP
+    rejects as inconsistent. Fixed the same way, forcing that module's
+    Java `compileOptions` down to 1.8 to match.
+  - `permission_handler_android` 14.0.0 requires Android SDK Platform 37,
+    and the copy Android's SDK manager auto-installed on this machine
+    doesn't match the exact `android-37` target hash Gradle looks for (a
+    preview/point-release naming mismatch, not something fixable from this
+    repo). Pinned to the prior stable `permission_handler_android: 13.0.1`
+    via `dependency_overrides` in `pubspec.yaml`, which targets the
+    already-working compileSdk 36 — remove the override once SDK Platform
+    37 installs cleanly on a given machine, or a fixed release ships.
+- Verify: `flutter analyze` clean, `flutter test` passing, `flutter build
+  apk --debug` succeeds. User tests location, contact picker, and SMS send
+  manually on their own device.
 
 ### Phase 4 — Smart Sentinel
 - [ ] `flutter_background_service` loop logging periodic location+speed

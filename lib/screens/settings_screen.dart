@@ -5,8 +5,19 @@ import '../providers/settings_provider.dart';
 import '../theme/app_colors.dart';
 import '../widgets/status_pill.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => context.read<SettingsProvider>().refreshPermissions());
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -73,7 +84,7 @@ class SettingsScreen extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 22),
                     child: Column(
                       children: [
-                        for (final p in SettingsProvider.permissions)
+                        for (final p in settings.permissions)
                           Container(
                             padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 2),
                             decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.textMuted(0.07)))),
@@ -89,7 +100,7 @@ class SettingsScreen extends StatelessWidget {
                                   ),
                                 ),
                                 TextButton(
-                                  onPressed: () => showNotBuiltSnack(context),
+                                  onPressed: p.granted ? null : () => settings.requestPermission(p.key),
                                   style: TextButton.styleFrom(
                                     backgroundColor: p.granted ? AppColors.successBg : Colors.transparent,
                                     foregroundColor: p.granted ? AppColors.successText : AppColors.accent,

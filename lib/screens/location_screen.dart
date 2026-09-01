@@ -1,5 +1,10 @@
-import 'package:flutter/material.dart';
+import 'dart:convert';
 
+import 'package:flutter/material.dart';
+import 'package:maplibre_gl/maplibre_gl.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../services/location_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/status_pill.dart';
 
@@ -21,8 +26,58 @@ const _helplines = [
   _Helpline(icon: Icons.support_agent_rounded, label: 'Madadgar National', sub: 'Legal and counselling', num: '1098'),
 ];
 
-class LocationScreen extends StatelessWidget {
+/// Raw OpenStreetMap raster tiles, no key/commercial provider — a locked-in
+/// decision (dev/light-use only; see CLAUDE.md's map caveat).
+final _osmStyle = jsonEncode({
+  'version': 8,
+  'sources': {
+    'osm': {
+      'type': 'raster',
+      'tiles': ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      'tileSize': 256,
+      'attribution': '© OpenStreetMap contributors',
+    },
+  },
+  'layers': [
+    {'id': 'osm-layer', 'type': 'raster', 'source': 'osm'},
+  ],
+});
+
+Future<void> _callNumber(String num) => launchUrl(Uri(scheme: 'tel', path: num));
+
+class LocationScreen extends StatefulWidget {
   const LocationScreen({super.key});
+
+  @override
+  State<LocationScreen> createState() => _LocationScreenState();
+}
+
+class _LocationScreenState extends State<LocationScreen> {
+  MapLibreMapController? _map;
+  double? _lat;
+  double? _lng;
+  double? _accuracy;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final position = await LocationService.getCurrentPosition();
+    if (!mounted) return;
+    setState(() {
+      _loading = false;
+      _lat = position?.latitude;
+      _lng = position?.longitude;
+      _accuracy = position?.accuracy;
+    });
+    if (position != null) {
+      _map?.animateCamera(CameraUpdate.newLatLng(LatLng(position.latitude, position.longitude)));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -59,37 +114,21 @@ class LocationScreen extends StatelessWidget {
                         child: Stack(
                           alignment: Alignment.center,
                           children: [
-                            CustomPaint(size: Size.infinite, painter: _GridPainter()),
-                            Container(
-                              width: 96,
-                              height: 96,
-                              decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.accentTint(0.14)),
-                            ),
-                            Container(
-                              width: 18,
-                              height: 18,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: AppColors.accent,
-                                border: Border.all(color: Colors.white, width: 3),
-                                boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 10, offset: Offset(0, 3))],
+                            MapLibreMap(
+                              styleString: _osmStyle,
+                              initialCameraPosition: CameraPosition(
+                                target: LatLng(_lat ?? 24.8607, _lng ?? 67.0011), // Karachi fallback
+                                zoom: 15,
                               ),
+                              onMapCreated: (c) => _map = c,
+                              myLocationEnabled: false,
+                              compassEnabled: false,
+                              rotateGesturesEnabled: false,
                             ),
-                            Positioned(
-                              left: 12,
-                              bottom: 12,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xB3161826),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  'MAP PLACEHOLDER',
-                                  style: TextStyle(fontSize: 10, letterSpacing: 1, color: AppColors.textMuted(0.3)),
-                                ),
-                              ),
-                            ),
+                            if (!_loading)
+                              const _PulsingMarker()
+                            else
+                              const CircularProgressIndicator(strokeWidth: 2, color: AppColors.accent),
                           ],
                         ),
                       ),
@@ -109,8 +148,16 @@ class LocationScreen extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('Block 5, Gulshan-e-Iqbal', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-                              Text('Karachi · accurate to 8 m · updated just now', style: TextStyle(fontSize: 11.5, color: AppColors.textMuted(0.45))),
+                              Text(
+                                _lat == null ? 'Location unavailable' : '${_lat!.toStringAsFixed(5)}, ${_lng!.toStringAsFixed(5)}',
+                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                              ),
+                              Text(
+                                _accuracy == null
+                                    ? 'Turn on location permission to share where you are'
+                                    : 'accurate to ${_accuracy!.round()} m · updated just now',
+                                style: TextStyle(fontSize: 11.5, color: AppColors.textMuted(0.45)),
+                              ),
                             ],
                           ),
                         ),
@@ -148,7 +195,7 @@ class LocationScreen extends StatelessWidget {
                       children: [
                         for (final h in _helplines)
                           InkWell(
-                            onTap: () => showNotBuiltSnack(context),
+                            onTap: () => _callNumber(h.num),
                             child: Container(
                               padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 2),
                               decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.textMuted(0.07)))),
@@ -188,6 +235,60 @@ class LocationScreen extends StatelessWidget {
   }
 }
 
+/// Sits fixed at the map's center — since the camera is always recentred on
+/// the live fix, this is equivalent to a marker pinned to that coordinate.
+class _PulsingMarker extends StatefulWidget {
+  const _PulsingMarker();
+
+  @override
+  State<_PulsingMarker> createState() => _PulsingMarkerState();
+}
+
+class _PulsingMarkerState extends State<_PulsingMarker> with SingleTickerProviderStateMixin {
+  late final _controller = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          final t = _controller.value;
+          return Stack(
+            alignment: Alignment.center,
+            children: [
+              Opacity(
+                opacity: (1 - t).clamp(0, 1),
+                child: Container(
+                  width: 24 + 72 * t,
+                  height: 24 + 72 * t,
+                  decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.accentTint(0.28)),
+                ),
+              ),
+              Container(
+                width: 18,
+                height: 18,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.accent,
+                  border: Border.all(color: Colors.white, width: 3),
+                  boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 10, offset: Offset(0, 3))],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
 class _SquareOutlineButton extends StatelessWidget {
   const _SquareOutlineButton({required this.icon, required this.onTap});
 
@@ -203,22 +304,4 @@ class _SquareOutlineButton extends StatelessWidget {
       child: IconButton(onPressed: onTap, icon: Icon(icon, size: 18, color: AppColors.text)),
     );
   }
-}
-
-class _GridPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = const Color(0xFF252735)
-      ..strokeWidth = 1;
-    for (double x = 0; x < size.width; x += 40) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
-    }
-    for (double y = 0; y < size.height; y += 40) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

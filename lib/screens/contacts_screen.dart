@@ -3,8 +3,21 @@ import 'package:provider/provider.dart';
 
 import '../models/contact.dart';
 import '../providers/contacts_provider.dart';
+import '../services/contact_picker_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/status_pill.dart';
+
+Future<void> _pickFromPhone(BuildContext context, ContactsProvider contacts) async {
+  if (contacts.contacts.length >= 5) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('Your list is full — remove someone first.')));
+    return;
+  }
+  final picked = await ContactPickerService.pick();
+  if (picked == null) return;
+  contacts.add(picked);
+}
 
 Future<void> _showAddContactDialog(BuildContext context, ContactsProvider contacts) async {
   if (contacts.contacts.length >= 5) {
@@ -101,7 +114,7 @@ class ContactsScreen extends StatelessWidget {
                       children: [
                         Expanded(
                           child: OutlinedButton.icon(
-                            onPressed: () => showNotBuiltSnack(context),
+                            onPressed: () => _pickFromPhone(context, contacts),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: AppColors.accent,
                               side: const BorderSide(color: AppColors.accent),

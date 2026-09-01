@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../providers/contacts_provider.dart';
 import '../providers/sos_provider.dart';
@@ -7,6 +8,8 @@ import '../theme/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/hold_to_confirm_button.dart';
 import '../widgets/status_pill.dart';
+
+Future<void> _callNumber(String num) => launchUrl(Uri(scheme: 'tel', path: num));
 
 class SosScreen extends StatelessWidget {
   const SosScreen({super.key});
@@ -479,8 +482,7 @@ class _ArmedBody extends StatelessWidget {
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    // tel: dialing is wired up in the native-integrations phase (needs url_launcher).
-                    onPressed: () => showNotBuiltSnack(context),
+                    onPressed: () => _callNumber('15'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.text,
                       backgroundColor: AppColors.textMuted(0.05),

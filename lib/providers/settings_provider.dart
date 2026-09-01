@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class SettingRow {
   const SettingRow({required this.key, required this.label, required this.sub});
@@ -12,12 +13,23 @@ class SettingRow {
 }
 
 class PermissionRow {
-  const PermissionRow({required this.label, required this.sub, required this.granted});
+  const PermissionRow({required this.key, required this.label, required this.sub, required this.granted});
 
+  final String key;
   final String label;
   final String sub;
   final bool granted;
 }
+
+/// The one OS permission checked for each row — "Microphone and camera" is
+/// reported via microphone alone since both gate on the same status once
+/// Recordings/Distress Listening add their own manifest entries (phases 5-6).
+const _permissionChecks = {
+  'location': Permission.locationWhenInUse,
+  'contacts': Permission.contacts,
+  'mic_camera': Permission.microphone,
+  'sms': Permission.sms,
+};
 
 const _defaultFeatures = {
   'sos': true,
@@ -50,12 +62,40 @@ class SettingsProvider extends ChangeNotifier {
     SettingRow(key: 'listen', label: 'Distress listening', sub: 'Fires an alert on a scream'),
   ];
 
-  static const permissions = [
-    PermissionRow(label: 'Location', sub: 'Allow all the time', granted: true),
-    PermissionRow(label: 'Contacts', sub: 'Allowed', granted: true),
-    PermissionRow(label: 'Microphone and camera', sub: 'Allowed', granted: true),
-    PermissionRow(label: 'SMS', sub: 'Not allowed yet', granted: false),
-  ];
+  static const _permissionLabels = {
+    'location': ('Location', 'Needed to share where you are'),
+    'contacts': ('Contacts', 'Needed to pick trusted contacts'),
+    'mic_camera': ('Microphone and camera', 'Needed for recordings and distress listening'),
+    'sms': ('SMS', 'Needed to alert your contacts'),
+  };
+
+  Map<String, bool> _permGranted = {for (final k in _permissionChecks.keys) k: false};
+
+  List<PermissionRow> get permissions => [
+        for (final k in _permissionChecks.keys)
+          PermissionRow(
+            key: k,
+            label: _permissionLabels[k]!.$1,
+            sub: (_permGranted[k] ?? false) ? 'Allowed' : _permissionLabels[k]!.$2,
+            granted: _permGranted[k] ?? false,
+          ),
+      ];
+
+  Future<void> refreshPermissions() async {
+    final result = <String, bool>{};
+    for (final entry in _permissionChecks.entries) {
+      result[entry.key] = await entry.value.status.isGranted;
+    }
+    _permGranted = result;
+    notifyListeners();
+  }
+
+  Future<void> requestPermission(String key) async {
+    final permission = _permissionChecks[key];
+    if (permission == null) return;
+    await permission.request();
+    await refreshPermissions();
+  }
 
   bool isOn(String key) => features[key] ?? false;
 

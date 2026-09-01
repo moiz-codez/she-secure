@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../providers/contacts_provider.dart';
 import '../providers/fake_call_provider.dart';
 import '../theme/app_colors.dart';
 import '../utils/formatters.dart';
@@ -28,6 +29,8 @@ class _SetupBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final fc = context.watch<FakeCallProvider>();
+    final trustedNames = context.watch<ContactsProvider>().contacts.map((c) => c.name).toList();
+    final callerOptions = trustedNames.isNotEmpty ? trustedNames : FakeCallProvider.names;
     return SafeArea(
       child: Column(
         children: [
@@ -72,12 +75,15 @@ class _SetupBody extends StatelessWidget {
                         spacing: 8,
                         runSpacing: 8,
                         children: [
-                          for (final name in FakeCallProvider.names)
+                          for (final name in callerOptions)
                             _Chip(label: name, active: fc.callerName == name, onTap: () => fc.setCallerName(name)),
                         ],
                       ),
                       const SizedBox(height: 12),
-                      const TextField(decoration: InputDecoration(hintText: 'Or type a name')),
+                      TextField(
+                        decoration: const InputDecoration(hintText: 'Or type a name'),
+                        onSubmitted: fc.setCallerName,
+                      ),
                     ],
                   ),
                 ),

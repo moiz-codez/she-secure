@@ -5,13 +5,16 @@ import 'dart:ui';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:provider/provider.dart';
 import 'package:record/record.dart';
 
 import '../app.dart';
 import '../firebase_options.dart';
+import '../providers/fake_call_provider.dart';
 import '../utils/listen_heuristic.dart';
 import '../utils/sentinel_heuristic.dart';
 import 'audio_detection_service.dart';
@@ -27,6 +30,8 @@ const sentinelServiceChannelId = 'sentinel_service';
 const sentinelServiceNotificationId = 8801;
 const sentinelCheckinChannelId = 'sentinel_checkin';
 const sentinelCheckinNotificationId = 8802;
+const fakeCallChannelId = 'fake_call';
+const fakeCallNotificationId = 8803;
 
 /// Sets up the always-on notification channels and registers the
 /// background-service config. Call once from `main()`, before `runApp`.
@@ -49,6 +54,19 @@ Future<void> initializeSentinelService() async {
         importance: Importance.high,
         playSound: false,
         enableVibration: true,
+      ));
+  // Silent — FakeCallProvider plays the actual ringtone once the ringing
+  // screen is up (via flutter_ringtone_player, which can bypass silent
+  // mode); this notification only exists to full-screen-launch the app
+  // over a locked screen when the scheduled delay elapses.
+  await notifications
+      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(const AndroidNotificationChannel(
+        fakeCallChannelId,
+        'Fake call',
+        description: 'Launches the fake-call screen when a scheduled call is due.',
+        importance: Importance.max,
+        playSound: false,
       ));
 
   await FlutterBackgroundService().configure(
@@ -78,6 +96,13 @@ Future<void> initializeMainIsolateNotifications() async {
     if (payload == 'checkin') {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         navigatorKey.currentState?.pushNamed(Routes.checkin);
+      });
+    } else if (payload == 'fakecall') {
+      const MethodChannel('she_secure/lockscreen').invokeMethod('showOverLockScreen');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final context = navigatorKey.currentContext;
+        if (context != null) context.read<FakeCallProvider>().ringNow();
+        navigatorKey.currentState?.pushNamed(Routes.fakeCall);
       });
     }
   }
@@ -124,6 +149,8 @@ StreamSubscription<Uint8List>? _micSub;
 final List<int> _micBuffer = []; // raw little-endian PCM16 bytes
 int _screamStreak = 0;
 
+Timer? _fakeCallTimer;
+
 @pragma('vm:entry-point')
 void _onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
@@ -162,7 +189,9 @@ void _onStart(ServiceInstance service) async {
       }
     }
 
-    if (!_sentinelOn && !_listenOn) {
+    // A fake call scheduled for later shouldn't be cut off just because
+    // Sentinel/Listen both happen to be off.
+    if (!_sentinelOn && !_listenOn && _fakeCallTimer == null) {
       _sampleTimer?.cancel();
       _checkInTimer?.cancel();
       _stopMicStream();
@@ -183,12 +212,76 @@ void _onStart(ServiceInstance service) async {
 
   service.on('simulateScream').listen((_) => _fireScream(service));
 
+  service.on('scheduleFakeCall').listen((event) {
+    final seconds = event?['seconds'] as int? ?? 0;
+    final callerName = event?['callerName'] as String? ?? '';
+    _scheduleFakeCall(seconds, callerName, notifications, service);
+  });
+  service.on('cancelFakeCall').listen((_) {
+    _fakeCallTimer?.cancel();
+    _fakeCallTimer = null;
+  });
+
   service.on('stop').listen((_) {
     _sampleTimer?.cancel();
     _checkInTimer?.cancel();
+    _fakeCallTimer?.cancel();
+    _fakeCallTimer = null;
     _stopMicStream();
     service.stopSelf();
   });
+}
+
+void _scheduleFakeCall(
+  int seconds,
+  String callerName,
+  FlutterLocalNotificationsPlugin notifications,
+  ServiceInstance service,
+) {
+  _fakeCallTimer?.cancel();
+  var secondsLeft = seconds;
+  _fakeCallTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+    secondsLeft -= 1;
+    if (secondsLeft <= 0) {
+      timer.cancel();
+      _fakeCallTimer = null;
+      _fireFakeCall(callerName, notifications, service);
+    } else {
+      service.invoke('fakeCallTick', {'secondsLeft': secondsLeft});
+    }
+  });
+}
+
+Future<void> _fireFakeCall(
+  String callerName,
+  FlutterLocalNotificationsPlugin notifications,
+  ServiceInstance service,
+) async {
+  // Full-screen intent: if the phone is locked, Android launches the app
+  // over the lock screen automatically, same as a real incoming call —
+  // MainActivity's showOverLockScreen() (triggered by the 'fake_call'
+  // intent extra flutter_local_notifications attaches) keeps it from
+  // requiring the phone to be unlocked first.
+  await notifications.show(
+    id: fakeCallNotificationId,
+    title: 'Incoming call',
+    body: callerName,
+    notificationDetails: const NotificationDetails(
+      android: AndroidNotificationDetails(
+        fakeCallChannelId,
+        'Fake call',
+        category: AndroidNotificationCategory.call,
+        importance: Importance.max,
+        priority: Priority.max,
+        fullScreenIntent: true,
+        playSound: false,
+        ongoing: true,
+        autoCancel: true,
+      ),
+    ),
+    payload: 'fakecall',
+  );
+  service.invoke('fakeCallFired', {'callerName': callerName});
 }
 
 void _startMicStream(ServiceInstance service) async {

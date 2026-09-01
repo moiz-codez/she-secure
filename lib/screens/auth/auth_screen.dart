@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
 import '../../app.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/permission_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/app_logo.dart';
 
@@ -18,8 +20,15 @@ class AuthScreen extends StatefulWidget {
 class _AuthScreenState extends State<AuthScreen> {
   _AuthTab _tab = _AuthTab.login;
 
-  void _enterApp() {
-    Navigator.of(context).pushNamedAndRemoveUntil(Routes.home, (route) => false);
+  Future<void> _enterApp() async {
+    final navigator = Navigator.of(context);
+    final smsStatus = await PermissionService.requestAll();
+    if (!mounted) return;
+    if (!smsStatus.isGranted) {
+      await showSmsRestrictedHelp(context);
+      if (!mounted) return;
+    }
+    navigator.pushNamedAndRemoveUntil(Routes.home, (route) => false);
   }
 
   @override

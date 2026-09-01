@@ -49,6 +49,17 @@ class ContactsProvider extends ChangeNotifier {
     await collection.doc(_docIds[index]).delete();
   }
 
+  Future<void> updateAt(int index, TrustedContact contact) async {
+    final collection = _collection;
+    if (collection == null) return;
+    await collection.doc(_docIds[index]).update({
+      'name': contact.name,
+      'relation': contact.relation,
+      'phone': contact.phone,
+      'initials': contact.initials,
+    });
+  }
+
   Future<void> add(TrustedContact contact) async {
     final collection = _collection;
     if (collection == null || _contacts.length >= 5) return;

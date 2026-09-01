@@ -6,7 +6,9 @@ import '../providers/auth_provider.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/listen_provider.dart';
 import '../providers/sentinel_provider.dart';
+import '../providers/sos_provider.dart';
 import '../theme/app_colors.dart';
+import '../widgets/hold_to_confirm_button.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -157,48 +159,53 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                         builder: (context, _) =>
                             _PulseRing(progress: (_pulseController.value + 0.5) % 1.0),
                       ),
-                      InkWell(
-                        customBorder: const CircleBorder(),
-                        onTap: () => Navigator.of(context).pushNamed(Routes.sos),
-                        child: Container(
-                          width: 196,
-                          height: 196,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
-                            gradient: const RadialGradient(
-                              center: Alignment(-0.36, -0.52),
-                              radius: 1.2,
-                              colors: [Color(0xFFF0698F), Color(0xFFE5527E), Color(0xFFB93A61)],
-                              stops: [0, 0.42, 1],
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.accentTint(0.42),
-                                blurRadius: 46,
-                                offset: const Offset(0, 18),
+                      Consumer<SosProvider>(
+                        builder: (context, sos, _) => HoldToConfirmButton(
+                          holdDuration: const Duration(milliseconds: 1100),
+                          onConfirmed: () {
+                            sos.beginCountdown();
+                            Navigator.of(context).pushNamed(Routes.sos);
+                          },
+                          builder: (context, progress) => Container(
+                            width: 196,
+                            height: 196,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+                              gradient: const RadialGradient(
+                                center: Alignment(-0.36, -0.52),
+                                radius: 1.2,
+                                colors: [Color(0xFFF0698F), Color(0xFFE5527E), Color(0xFFB93A61)],
+                                stops: [0, 0.42, 1],
                               ),
-                            ],
-                          ),
-                          child: const Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.campaign_rounded, size: 38, color: Colors.white),
-                              SizedBox(height: 5),
-                              Text(
-                                'SOS',
-                                style: TextStyle(
-                                  fontSize: 30,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: 3,
-                                  color: Colors.white,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: AppColors.accentTint(0.42),
+                                  blurRadius: 46,
+                                  offset: const Offset(0, 18),
                                 ),
-                              ),
-                              Text(
-                                'press and hold',
-                                style: TextStyle(fontSize: 11.5, color: Colors.white70, letterSpacing: 0.3),
-                              ),
-                            ],
+                              ],
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.campaign_rounded, size: 38, color: Colors.white),
+                                const SizedBox(height: 5),
+                                const Text(
+                                  'SOS',
+                                  style: TextStyle(
+                                    fontSize: 30,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 3,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                Text(
+                                  progress > 0 ? 'keep holding…' : 'press and hold',
+                                  style: const TextStyle(fontSize: 11.5, color: Colors.white70, letterSpacing: 0.3),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),

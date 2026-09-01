@@ -32,21 +32,8 @@ class AuthProvider extends ChangeNotifier {
     final uid = credential.user!.uid;
     await credential.user!.updateDisplayName(name);
 
-    // Seed a starter user doc + the same sample trusted contacts the
-    // design canvas demoed with, so a fresh account isn't a blank slate.
     final userDoc = FirebaseFirestore.instance.collection('users').doc(uid);
     await userDoc.set({'name': name, 'email': email, 'createdAt': FieldValue.serverTimestamp()});
-    final seedContacts = [
-      {'name': 'Ammi', 'relation': 'Mother', 'phone': '0300 232 4412', 'initials': 'A'},
-      {'name': 'Zainab', 'relation': 'Sister', 'phone': '0321 887 1188', 'initials': 'Z'},
-      {'name': 'Hira', 'relation': 'Flatmate', 'phone': '0333 504 9004', 'initials': 'H'},
-      {'name': 'Bilal', 'relation': 'Colleague', 'phone': '0345 771 2257', 'initials': 'B'},
-    ];
-    final batch = FirebaseFirestore.instance.batch();
-    for (final contact in seedContacts) {
-      batch.set(userDoc.collection('contacts').doc(), contact);
-    }
-    await batch.commit();
   }
 
   Future<void> sendPasswordReset(String email) {

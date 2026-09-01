@@ -5,7 +5,6 @@ import '../models/contact.dart';
 import '../providers/contacts_provider.dart';
 import '../services/contact_picker_service.dart';
 import '../theme/app_colors.dart';
-import '../widgets/status_pill.dart';
 
 Future<void> _pickFromPhone(BuildContext context, ContactsProvider contacts) async {
   if (contacts.contacts.length >= 5) {
@@ -64,6 +63,55 @@ Future<void> _showAddContactDialog(BuildContext context, ContactsProvider contac
             Navigator.of(dialogContext).pop();
           },
           child: const Text('Add'),
+        ),
+      ],
+    ),
+  );
+}
+
+Future<void> _showEditContactDialog(BuildContext context, ContactsProvider contacts, int index) async {
+  final contact = contacts.contacts[index];
+  final nameCtrl = TextEditingController(text: contact.name);
+  final relationCtrl = TextEditingController(text: contact.relation);
+  final phoneCtrl = TextEditingController(text: contact.phone);
+
+  await showDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      backgroundColor: AppColors.surface,
+      title: const Text('Edit contact'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Name')),
+          const SizedBox(height: 10),
+          TextField(controller: relationCtrl, decoration: const InputDecoration(labelText: 'Relation')),
+          const SizedBox(height: 10),
+          TextField(
+            controller: phoneCtrl,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(labelText: 'Phone'),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () {
+            final name = nameCtrl.text.trim();
+            if (name.isEmpty || phoneCtrl.text.trim().isEmpty) return;
+            contacts.updateAt(
+              index,
+              TrustedContact(
+                name: name,
+                relation: relationCtrl.text.trim().isEmpty ? 'Contact' : relationCtrl.text.trim(),
+                phone: phoneCtrl.text.trim(),
+                initials: name[0].toUpperCase(),
+              ),
+            );
+            Navigator.of(dialogContext).pop();
+          },
+          child: const Text('Save'),
         ),
       ],
     ),
@@ -187,7 +235,7 @@ class ContactsScreen extends StatelessWidget {
                                   ),
                                 ),
                                 IconButton(
-                                  onPressed: () => showNotBuiltSnack(context),
+                                  onPressed: () => _showEditContactDialog(context, contacts, i),
                                   icon: Icon(Icons.edit_outlined, size: 17, color: AppColors.textMuted(0.5)),
                                 ),
                                 IconButton(

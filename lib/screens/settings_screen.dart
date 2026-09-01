@@ -2,8 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/settings_provider.dart';
+import '../services/permission_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/status_pill.dart';
+
+Future<void> _requestPermission(BuildContext context, SettingsProvider settings, String key) async {
+  await settings.requestPermission(key);
+  if (!context.mounted) return;
+  final row = settings.permissions.firstWhere((p) => p.key == key);
+  if (key == 'sms' && !row.granted) {
+    await showSmsRestrictedHelp(context);
+  }
+}
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -100,7 +110,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   ),
                                 ),
                                 TextButton(
-                                  onPressed: p.granted ? null : () => settings.requestPermission(p.key),
+                                  onPressed: p.granted ? null : () => _requestPermission(context, settings, p.key),
                                   style: TextButton.styleFrom(
                                     backgroundColor: p.granted ? AppColors.successBg : Colors.transparent,
                                     foregroundColor: p.granted ? AppColors.successText : AppColors.accent,

@@ -76,19 +76,28 @@ dev_dependencies:
   flutter_launcher_icons: ^0.14.4
 
 # Regenerates android/app/src/main/res/mipmap-*/ic_launcher.png (and the
-# adaptive-icon layers) from assets/images/logo.png. Run with:
+# adaptive-icon layers) from assets/images/logo_icon.png. Run with:
 #   dart run flutter_launcher_icons
 # whenever the logo changes — this config doesn't run automatically.
+#
+# Uses logo_icon.png (a padded copy of logo.png), not logo.png directly —
+# the shield fills logo.png's canvas almost edge-to-edge vertically but has
+# real margin on the sides, so an adaptive icon's circular/squircle mask
+# clips the top point and bottom curve before it ever touches the sides.
+# logo_icon.png adds even margin on all four sides so the whole shield
+# fits inside the safe zone on every launcher shape. The in-app logo
+# (AppLogo widget) keeps using plain logo.png — it just does BoxFit.contain
+# in a box, no masking, so it never had this problem.
 flutter_launcher_icons:
   android: true
   ios: false
-  image_path: "assets/images/logo.png"
+  image_path: "assets/images/logo_icon.png"
   min_sdk_android: 21
   # This logo has real transparency (unlike the earlier .jpg), so the
   # background behind it can match the app's own dark theme instead of
   # needing a white badge for contrast.
   adaptive_icon_background: "#161826"
-  adaptive_icon_foreground: "assets/images/logo.png"
+  adaptive_icon_foreground: "assets/images/logo_icon.png"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

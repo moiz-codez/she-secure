@@ -18,7 +18,7 @@ const _steps = [
     title: 'One button, and they all know',
     body:
         'Hold the SOS button for one second. Your live location and a short message go to every trusted '
-        'contact, by SMS and WhatsApp at once.',
+        'contact by SMS.',
   ),
   _ObStep(
     icon: Icons.groups_rounded,
@@ -112,16 +112,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           colors: [Color(0xFF22243A), Color(0xFF1B1D2C)],
                         ),
                       ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(step.icon, size: 46, color: AppColors.accent.withValues(alpha: 0.85)),
-                          const SizedBox(height: 12),
-                          Text(
-                            'ILLUSTRATION PLACEHOLDER',
-                            style: TextStyle(fontSize: 10, letterSpacing: 1.1, color: AppColors.textMuted(0.3)),
-                          ),
-                        ],
+                      child: Center(
+                        child: Icon(step.icon, size: 88, color: AppColors.accent.withValues(alpha: 0.85)),
                       ),
                     ),
                     AnimatedSwitcher(

@@ -154,14 +154,22 @@ Timer? _fakeCallTimer;
 @pragma('vm:entry-point')
 void _onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
-  final notifications = FlutterLocalNotificationsPlugin();
-  await notifications.initialize(
-    settings: const InitializationSettings(android: AndroidInitializationSettings('@mipmap/ic_launcher')),
-  );
+  // `startService()` on the main-isolate side only confirms Android
+  // started this isolate — not that the awaits below have finished. If a
+  // message arrives before its listener is registered, it's silently
+  // dropped (no queueing, no error). Sentinel/Listen's config gets
+  // resent on every Firestore change so a dropped first message was easy
+  // to miss, but a one-shot action like scheduling a fake call has no
+  // retry — that's why it could go missing entirely. Fix: register every
+  // listener synchronously, right now, before any `await`; each handler
+  // waits on `_ready` itself before touching Firebase/notifications.
+  final ready = Completer<void>();
+  FlutterLocalNotificationsPlugin? notificationsOrNull;
 
-  service.on('configure').listen((event) {
+  service.on('configure').listen((event) async {
+    await ready.future;
+    final notifications = notificationsOrNull!;
     if (event == null) return;
     if (event.containsKey('uid')) _uid = event['uid'] as String?;
 
@@ -199,23 +207,34 @@ void _onStart(ServiceInstance service) async {
     }
   });
 
-  service.on('simulateCheckIn').listen((_) {
+  service.on('simulateCheckIn').listen((_) async {
+    await ready.future;
     _startCheckIn(
       'You are 2.4 km off your usual route home and moving at running pace.',
-      notifications,
+      notificationsOrNull!,
       service,
     );
   });
 
-  service.on('confirm').listen((_) => _endCheckIn(escalated: false, notifications: notifications, service: service));
-  service.on('escalateNow').listen((_) => _endCheckIn(escalated: true, notifications: notifications, service: service));
+  service.on('confirm').listen((_) async {
+    await ready.future;
+    await _endCheckIn(escalated: false, notifications: notificationsOrNull!, service: service);
+  });
+  service.on('escalateNow').listen((_) async {
+    await ready.future;
+    await _endCheckIn(escalated: true, notifications: notificationsOrNull!, service: service);
+  });
 
-  service.on('simulateScream').listen((_) => _fireScream(service));
+  service.on('simulateScream').listen((_) async {
+    await ready.future;
+    await _fireScream(service);
+  });
 
-  service.on('scheduleFakeCall').listen((event) {
+  service.on('scheduleFakeCall').listen((event) async {
+    await ready.future;
     final seconds = event?['seconds'] as int? ?? 0;
     final callerName = event?['callerName'] as String? ?? '';
-    _scheduleFakeCall(seconds, callerName, notifications, service);
+    _scheduleFakeCall(seconds, callerName, notificationsOrNull!, service);
   });
   service.on('cancelFakeCall').listen((_) {
     _fakeCallTimer?.cancel();
@@ -230,6 +249,14 @@ void _onStart(ServiceInstance service) async {
     _stopMicStream();
     service.stopSelf();
   });
+
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  final notifications = FlutterLocalNotificationsPlugin();
+  await notifications.initialize(
+    settings: const InitializationSettings(android: AndroidInitializationSettings('@mipmap/ic_launcher')),
+  );
+  notificationsOrNull = notifications;
+  ready.complete();
 }
 
 void _scheduleFakeCall(

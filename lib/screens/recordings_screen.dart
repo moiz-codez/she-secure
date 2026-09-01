@@ -2,11 +2,22 @@ import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/recordings_provider.dart';
 import '../theme/app_colors.dart';
 import '../utils/formatters.dart';
+
+Future<void> _openClip(BuildContext context, RecordingClip clip) async {
+  if (clip.localPath.isEmpty) return;
+  final result = await OpenFilex.open(clip.localPath);
+  if (result.type != ResultType.done && context.mounted) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(result.message)));
+  }
+}
 
 Future<void> _confirmDelete(BuildContext context, RecordingsProvider recordings, int index) async {
   final confirmed = await showDialog<bool>(
@@ -237,36 +248,39 @@ class _RecordingsScreenState extends State<RecordingsScreen> {
                     child: Column(
                       children: [
                         for (var i = 0; i < recordings.clips.length; i++)
-                          Container(
-                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 2),
-                            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.textMuted(0.07)))),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 44,
-                                  height: 38,
-                                  decoration: BoxDecoration(
-                                    color: AppColors.surfaceDim,
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: AppColors.textMuted(0.08)),
+                          InkWell(
+                            onTap: () => _openClip(context, recordings.clips[i]),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 2),
+                              decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.textMuted(0.07)))),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 44,
+                                    height: 38,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.surfaceDim,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: AppColors.textMuted(0.08)),
+                                    ),
+                                    child: Icon(recordings.clips[i].icon, size: 16, color: AppColors.textMuted(0.4)),
                                   ),
-                                  child: Icon(recordings.clips[i].icon, size: 16, color: AppColors.textMuted(0.4)),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(recordings.clips[i].name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-                                      Text(recordings.clips[i].meta, style: TextStyle(fontSize: 11.5, color: AppColors.textMuted(0.45))),
-                                    ],
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(recordings.clips[i].name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                                        Text(recordings.clips[i].meta, style: TextStyle(fontSize: 11.5, color: AppColors.textMuted(0.45))),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                                IconButton(
-                                  onPressed: () => _confirmDelete(context, recordings, i),
-                                  icon: Icon(Icons.delete_outline_rounded, size: 17, color: AppColors.textMuted(0.4)),
-                                ),
-                              ],
+                                  IconButton(
+                                    onPressed: () => _confirmDelete(context, recordings, i),
+                                    icon: Icon(Icons.delete_outline_rounded, size: 17, color: AppColors.textMuted(0.4)),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                       ],

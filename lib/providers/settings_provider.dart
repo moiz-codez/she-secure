@@ -29,6 +29,7 @@ const _permissionChecks = {
   'contacts': Permission.contacts,
   'mic_camera': Permission.microphone,
   'sms': Permission.sms,
+  'battery': Permission.ignoreBatteryOptimizations,
 };
 
 const _defaultFeatures = {
@@ -36,7 +37,6 @@ const _defaultFeatures = {
   'shake': true,
   'power': true,
   'location': true,
-  'record': true,
   'fake': true,
   'sentinel': true,
   'listen': true,
@@ -56,7 +56,6 @@ class SettingsProvider extends ChangeNotifier {
     SettingRow(key: 'shake', label: 'Shake to alert', sub: 'A hard shake fires SOS'),
     SettingRow(key: 'power', label: 'Power button ×3', sub: 'Works with the screen locked'),
     SettingRow(key: 'location', label: 'Share live location', sub: 'Updates every ten seconds'),
-    SettingRow(key: 'record', label: 'Auto-record on SOS', sub: 'Starts audio when an alert fires'),
     SettingRow(key: 'fake', label: 'Fake call', sub: 'Show it on the home screen'),
     SettingRow(key: 'sentinel', label: 'Smart Sentinel', sub: 'Learns your routine and checks on you'),
     SettingRow(key: 'listen', label: 'Distress listening', sub: 'Fires an alert on a scream'),
@@ -67,6 +66,7 @@ class SettingsProvider extends ChangeNotifier {
     'contacts': ('Contacts', 'Needed to pick trusted contacts'),
     'mic_camera': ('Microphone and camera', 'Needed for recordings and distress listening'),
     'sms': ('SMS', 'Needed to alert your contacts'),
+    'battery': ('Battery optimization', 'Needed so the OS doesn\'t stop Sentinel/Listen in the background'),
   };
 
   Map<String, bool> _permGranted = {for (final k in _permissionChecks.keys) k: false};

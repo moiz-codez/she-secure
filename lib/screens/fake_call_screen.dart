@@ -30,7 +30,12 @@ class _SetupBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final fc = context.watch<FakeCallProvider>();
     final trustedNames = context.watch<ContactsProvider>().contacts.map((c) => c.name).toList();
-    final callerOptions = trustedNames.isNotEmpty ? trustedNames : FakeCallProvider.names;
+    // Trusted contacts first, then the quick presets — skipping any preset
+    // name that's already a trusted contact so nothing shows up twice.
+    final callerOptions = [
+      ...trustedNames,
+      ...FakeCallProvider.names.where((name) => !trustedNames.contains(name)),
+    ];
     return SafeArea(
       child: Column(
         children: [

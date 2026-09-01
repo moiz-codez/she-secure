@@ -33,12 +33,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    _name.text = context.read<AuthProvider>().user?.displayName ?? '';
+    // Firestore is the source of truth, not Firebase Auth's cached
+    // displayName — that can lag behind (it only refreshes on ID-token
+    // renewal), so a name saved from another session could take a while
+    // to show up here, or never look in sync at all. age/city already
+    // read from Firestore; name now does too, falling back to Auth's
+    // cached value only if the document has nothing yet.
     FirebaseFirestore.instance.collection('users').doc(_uid).get().then((doc) async {
       if (!mounted) return;
       final data = doc.data();
       final path = await ProfilePhotoService.path();
       setState(() {
+        _name.text = data?['name'] as String? ?? context.read<AuthProvider>().user?.displayName ?? '';
         _age.text = data?['age'] as String? ?? '';
         _city.text = data?['city'] as String? ?? '';
         _photoPath = File(path).existsSync() ? path : null;

@@ -16,6 +16,7 @@ class PermissionService {
     await Permission.camera.request();
     await Permission.microphone.request();
     await Permission.notification.request();
+    await Permission.ignoreBatteryOptimizations.request();
     return Permission.sms.request();
   }
 }

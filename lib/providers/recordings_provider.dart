@@ -5,6 +5,7 @@ import 'package:camera/camera.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:gal/gal.dart';
+import 'package:media_store_plus/media_store_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 
@@ -13,21 +14,23 @@ import '../services/recording_service.dart';
 enum RecordingTab { video, audio, photo }
 
 class RecordingClip {
-  const RecordingClip({required this.name, required this.meta, required this.icon});
+  const RecordingClip({required this.name, required this.meta, required this.icon, required this.localPath});
 
   final String name;
   final String meta;
   final IconData icon;
+  final String localPath;
 }
 
 /// Real local capture — video/audio/photo files are saved on-device under
 /// an `evidence/` folder (never uploaded), with only a lightweight
 /// reference doc (type, local path, timestamp, duration/size) kept in
-/// Firestore. See CLAUDE.md's evidence-storage decision. Photos and
-/// videos are also saved to the phone's shared Gallery (via `gal`), so
-/// they're easy to find and share afterward — audio has no Gallery
-/// equivalent (Android's Gallery app only indexes images/video), so
-/// audio recordings stay app-private only, same as most voice-memo apps.
+/// Firestore. See CLAUDE.md's evidence-storage decision. Every capture is
+/// also indexed into the phone's shared media collections so it's easy to
+/// find outside the app too — photos/videos via `gal` (Gallery), audio via
+/// `media_store_plus` into Music/She Secure (Android's Gallery app itself
+/// only indexes images/video, so a recording/music app is the audio
+/// equivalent of "shows up in the phone's own app for that media type").
 class RecordingsProvider extends ChangeNotifier {
   RecordingTab tab = RecordingTab.video;
   bool isRecording = false;
@@ -63,6 +66,7 @@ class RecordingsProvider extends ChangeNotifier {
         return RecordingClip(
           name: '${type[0].toUpperCase()}${type.substring(1)} · ${_formatWhen((data['timestamp'] as Timestamp?)?.toDate())}',
           meta: data['durationOrSize'] as String? ?? '',
+          localPath: data['localPath'] as String? ?? '',
           icon: switch (type) {
             'audio' => Icons.mic_none_rounded,
             'photo' => Icons.image_outlined,
@@ -189,7 +193,7 @@ class RecordingsProvider extends ChangeNotifier {
       final dest = '${dir.path}/${RecordingService.filePath('photo', 'jpg')}';
       await File(shot.path).copy(dest);
       final sizeBytes = await File(dest).length();
-      await _saveToGallery(() => Gal.putImage(dest, album: 'She Secure'));
+      await _bestEffort(() => Gal.putImage(dest, album: 'She Secure'));
       await _saveReference(type: 'photo', localPath: dest, durationOrSize: RecordingService.formatBytes(sizeBytes));
     } catch (e) {
       onError?.call('Couldn\'t save the photo: $e');
@@ -230,7 +234,7 @@ class RecordingsProvider extends ChangeNotifier {
       final dest = '${dir.path}/${RecordingService.filePath('video', 'mp4')}';
       await File(captured.path).copy(dest);
       final sizeBytes = await File(dest).length();
-      await _saveToGallery(() => Gal.putVideo(dest, album: 'She Secure'));
+      await _bestEffort(() => Gal.putVideo(dest, album: 'She Secure'));
       await _saveReference(
         type: 'video',
         localPath: dest,
@@ -272,6 +276,9 @@ class RecordingsProvider extends ChangeNotifier {
       final path = await _audioRecorder.stop();
       if (path == null) return;
       final sizeBytes = await File(path).length();
+      await _bestEffort(() async {
+        await MediaStore().saveFile(tempFilePath: path, dirType: DirType.audio, dirName: DirName.music);
+      });
       await _saveReference(
         type: 'audio',
         localPath: path,
@@ -284,7 +291,7 @@ class RecordingsProvider extends ChangeNotifier {
 
   /// Best-effort — a Gallery-save failure (permission denied, no Gallery
   /// app, etc.) shouldn't block the app's own private copy from saving.
-  Future<void> _saveToGallery(Future<void> Function() save) async {
+  Future<void> _bestEffort(Future<void> Function() save) async {
     try {
       await save();
     } catch (_) {}

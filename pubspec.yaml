@@ -52,6 +52,8 @@ dependencies:
   tflite_flutter: ^0.12.1
   camera: ^0.12.0+2
   path_provider: ^2.1.6
+  share_plus: ^13.3.0
+  gal: ^2.3.3
 
 
 # permission_handler_android 14.0.0 requires Android SDK Platform 37, whose

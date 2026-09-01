@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -5,7 +7,25 @@ import 'package:provider/provider.dart';
 import '../providers/recordings_provider.dart';
 import '../theme/app_colors.dart';
 import '../utils/formatters.dart';
-import '../widgets/status_pill.dart';
+
+Future<void> _confirmDelete(BuildContext context, RecordingsProvider recordings, int index) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      backgroundColor: AppColors.surface,
+      title: const Text('Delete this file?'),
+      content: const Text('This removes it from She Secure and your phone. This can\'t be undone.'),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: Text('Delete', style: TextStyle(color: AppColors.danger)),
+        ),
+      ],
+    ),
+  );
+  if (confirmed == true) await recordings.deleteClip(index);
+}
 
 class RecordingsScreen extends StatefulWidget {
   const RecordingsScreen({super.key});
@@ -18,12 +38,21 @@ class _RecordingsScreenState extends State<RecordingsScreen> {
   @override
   void initState() {
     super.initState();
-    context.read<RecordingsProvider>().initCamera();
+    final recordings = context.read<RecordingsProvider>();
+    recordings.onError = (message) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(message)));
+    };
+    recordings.initCamera();
   }
 
   @override
   void dispose() {
-    context.read<RecordingsProvider>().disposeCamera();
+    final recordings = context.read<RecordingsProvider>();
+    recordings.onError = null;
+    recordings.disposeCamera();
     super.dispose();
   }
 
@@ -93,7 +122,11 @@ class _RecordingsScreenState extends State<RecordingsScreen> {
                         child: Stack(
                           alignment: Alignment.center,
                           children: [
-                            if (recordings.cameraReady && recordings.cameraController != null)
+                            if (recordings.tab == RecordingTab.audio)
+                              Center(
+                                child: _AudioIndicator(active: recordings.isRecording),
+                              )
+                            else if (recordings.cameraReady && recordings.cameraController != null)
                               Positioned.fill(
                                 child: FittedBox(
                                   fit: BoxFit.cover,
@@ -140,6 +173,21 @@ class _RecordingsScreenState extends State<RecordingsScreen> {
                                   ),
                                 ),
                               ),
+                            if (recordings.tab != RecordingTab.audio && recordings.canSwitchCamera && !recordings.isRecording)
+                              Positioned(
+                                top: 12,
+                                right: 12,
+                                child: InkWell(
+                                  customBorder: const CircleBorder(),
+                                  onTap: recordings.switchCamera,
+                                  child: Container(
+                                    width: 34,
+                                    height: 34,
+                                    decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.4), shape: BoxShape.circle),
+                                    child: const Icon(Icons.cameraswitch_outlined, size: 17, color: Colors.white),
+                                  ),
+                                ),
+                              ),
                           ],
                         ),
                       ),
@@ -182,19 +230,13 @@ class _RecordingsScreenState extends State<RecordingsScreen> {
                   ),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(24, 28, 24, 6),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('SAVED ON THIS PHONE', style: TextStyle(fontSize: 9.5, letterSpacing: 1.1, color: AppColors.textMuted(0.35))),
-                        Text('30 MB used', style: TextStyle(fontSize: 11.5, color: AppColors.textMuted(0.4))),
-                      ],
-                    ),
+                    child: Text('SAVED ON THIS PHONE', style: TextStyle(fontSize: 9.5, letterSpacing: 1.1, color: AppColors.textMuted(0.35))),
                   ),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 22),
                     child: Column(
                       children: [
-                        for (final clip in recordings.clips)
+                        for (var i = 0; i < recordings.clips.length; i++)
                           Container(
                             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 2),
                             decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.textMuted(0.07)))),
@@ -208,35 +250,25 @@ class _RecordingsScreenState extends State<RecordingsScreen> {
                                     borderRadius: BorderRadius.circular(8),
                                     border: Border.all(color: AppColors.textMuted(0.08)),
                                   ),
-                                  child: Icon(clip.icon, size: 16, color: AppColors.textMuted(0.4)),
+                                  child: Icon(recordings.clips[i].icon, size: 16, color: AppColors.textMuted(0.4)),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text(clip.name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-                                      Text(clip.meta, style: TextStyle(fontSize: 11.5, color: AppColors.textMuted(0.45))),
+                                      Text(recordings.clips[i].name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                                      Text(recordings.clips[i].meta, style: TextStyle(fontSize: 11.5, color: AppColors.textMuted(0.45))),
                                     ],
                                   ),
                                 ),
                                 IconButton(
-                                  onPressed: () => showNotBuiltSnack(context),
-                                  icon: Icon(Icons.more_vert_rounded, size: 17, color: AppColors.textMuted(0.4)),
+                                  onPressed: () => _confirmDelete(context, recordings, i),
+                                  icon: Icon(Icons.delete_outline_rounded, size: 17, color: AppColors.textMuted(0.4)),
                                 ),
                               ],
                             ),
                           ),
-                        Padding(
-                          padding: const EdgeInsets.only(top: 16),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              'Nothing is uploaded. Files stay on the phone until you share them yourself.',
-                              style: TextStyle(fontSize: 11.5, height: 1.55, color: AppColors.textMuted(0.4)),
-                            ),
-                          ),
-                        ),
                       ],
                     ),
                   ),
@@ -246,6 +278,78 @@ class _RecordingsScreenState extends State<RecordingsScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _AudioIndicator extends StatefulWidget {
+  const _AudioIndicator({required this.active});
+
+  final bool active;
+
+  @override
+  State<_AudioIndicator> createState() => _AudioIndicatorState();
+}
+
+class _AudioIndicatorState extends State<_AudioIndicator> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1300))..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          widget.active ? Icons.mic_rounded : Icons.mic_none_rounded,
+          size: 34,
+          color: widget.active ? AppColors.accentLight : AppColors.textMuted(0.3),
+        ),
+        const SizedBox(height: 16),
+        AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) {
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: List.generate(16, (i) {
+                final phase = _controller.value + i * (0.09 / 1.3);
+                final wave = widget.active ? (math.sin(2 * math.pi * phase) + 1) / 2 : 0.15;
+                final scaleY = 0.15 + wave * 0.85;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2.5),
+                  child: SizedBox(
+                    width: 4,
+                    height: 46,
+                    child: Align(
+                      alignment: Alignment.center,
+                      child: FractionallySizedBox(
+                        heightFactor: scaleY,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: widget.active ? AppColors.accentTint(0.75) : AppColors.textMuted(0.18),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            );
+          },
+        ),
+      ],
     );
   }
 }

@@ -1,12 +1,13 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:maplibre_gl/maplibre_gl.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/location_service.dart';
 import '../theme/app_colors.dart';
-import '../widgets/status_pill.dart';
 
 class _Helpline {
   const _Helpline({required this.icon, required this.label, required this.sub, required this.num});
@@ -77,6 +78,27 @@ class _LocationScreenState extends State<LocationScreen> {
     if (position != null) {
       _map?.animateCamera(CameraUpdate.newLatLng(LatLng(position.latitude, position.longitude)));
     }
+  }
+
+  /// Same Google Maps link format the SOS SMS already uses — a snapshot of
+  /// where the fix was when shared/copied, not a hosted continuously
+  /// updating page (this app has no such backend).
+  String? get _mapsLink => _lat == null ? null : 'https://maps.google.com/?q=$_lat,$_lng';
+
+  Future<void> _copyLink(BuildContext context) async {
+    final link = _mapsLink;
+    if (link == null) return;
+    await Clipboard.setData(ClipboardData(text: link));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('Link copied.')));
+  }
+
+  Future<void> _shareLink(BuildContext context) async {
+    final link = _mapsLink;
+    if (link == null) return;
+    await SharePlus.instance.share(ShareParams(text: link, subject: 'My location'));
   }
 
   @override
@@ -170,7 +192,7 @@ class _LocationScreenState extends State<LocationScreen> {
                       children: [
                         Expanded(
                           child: OutlinedButton.icon(
-                            onPressed: () => showNotBuiltSnack(context),
+                            onPressed: () => _shareLink(context),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: AppColors.accent,
                               side: const BorderSide(color: AppColors.accent),
@@ -181,7 +203,7 @@ class _LocationScreenState extends State<LocationScreen> {
                           ),
                         ),
                         const SizedBox(width: 9),
-                        _SquareOutlineButton(icon: Icons.copy_rounded, onTap: () => showNotBuiltSnack(context)),
+                        _SquareOutlineButton(icon: Icons.copy_rounded, onTap: () => _copyLink(context)),
                       ],
                     ),
                   ),

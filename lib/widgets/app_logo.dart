@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../theme/app_colors.dart';
-
-/// Placeholder mark for the She Secure shield logo. The design canvas used
-/// a custom clipped-SVG shield shape; the user is supplying the real logo
-/// asset separately. Swap the [Icon] below for
-/// `Image.asset('assets/images/logo.png')` once that file is dropped into
-/// the project (and declared under `flutter.assets` in pubspec.yaml).
+/// The She Secure shield mark. The source file
+/// (`assets/images/logo.jpg`) is a flat graphic on a white background —
+/// shown on a small white badge rather than directly against the app's
+/// dark theme, so that white background reads as a deliberate mark rather
+/// than a stray box. Used on the splash screen and the auth screen.
 class AppLogo extends StatelessWidget {
   const AppLogo({super.key, this.size = 28});
 
@@ -14,6 +12,19 @@ class AppLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Icon(Icons.shield_rounded, size: size, color: AppColors.accent);
+    return Container(
+      width: size,
+      height: size,
+      padding: EdgeInsets.all(size * 0.12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(size * 0.24),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(size * 0.14),
+        child: Image.asset('assets/images/logo.jpg', fit: BoxFit.contain),
+      ),
+    );
   }
 }

@@ -1,3 +1,4 @@
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -6,8 +7,25 @@ import '../theme/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/status_pill.dart';
 
-class RecordingsScreen extends StatelessWidget {
+class RecordingsScreen extends StatefulWidget {
   const RecordingsScreen({super.key});
+
+  @override
+  State<RecordingsScreen> createState() => _RecordingsScreenState();
+}
+
+class _RecordingsScreenState extends State<RecordingsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    context.read<RecordingsProvider>().initCamera();
+  }
+
+  @override
+  void dispose() {
+    context.read<RecordingsProvider>().disposeCamera();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -75,14 +93,29 @@ class RecordingsScreen extends StatelessWidget {
                         child: Stack(
                           alignment: Alignment.center,
                           children: [
-                            Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.cameraswitch_outlined, size: 34, color: AppColors.textMuted(0.22)),
-                                const SizedBox(height: 9),
-                                Text('CAMERA PREVIEW', style: TextStyle(fontSize: 10, letterSpacing: 1.1, color: AppColors.textMuted(0.26))),
-                              ],
-                            ),
+                            if (recordings.cameraReady && recordings.cameraController != null)
+                              Positioned.fill(
+                                child: FittedBox(
+                                  fit: BoxFit.cover,
+                                  child: SizedBox(
+                                    width: recordings.cameraController!.value.previewSize?.height ?? 1,
+                                    height: recordings.cameraController!.value.previewSize?.width ?? 1,
+                                    child: CameraPreview(recordings.cameraController!),
+                                  ),
+                                ),
+                              )
+                            else
+                              Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.cameraswitch_outlined, size: 34, color: AppColors.textMuted(0.22)),
+                                  const SizedBox(height: 9),
+                                  Text(
+                                    'CAMERA PREVIEW',
+                                    style: TextStyle(fontSize: 10, letterSpacing: 1.1, color: AppColors.textMuted(0.26)),
+                                  ),
+                                ],
+                              ),
                             if (recordings.isRecording)
                               Positioned(
                                 top: 12,

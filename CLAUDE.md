@@ -312,13 +312,43 @@ end to end.
   accuracy manually on their own device, and builds the APK themselves
   once every phase is done.
 
-### Phase 6 — Recordings + Fake Call
-- [ ] Local video/audio/photo capture via `camera`/`path_provider`, saved
-      under the `evidence/` folder with a Firestore reference doc per file
-- [ ] Fake-call screen sequence (setup → waiting → ringing → in-call) as
-      local UI + timers, no real telephony interception needed
-- Verify: `flutter analyze`/`flutter build` clean; the user tests
-  camera/mic capture and the fake-call flow manually
+### Phase 6 — Recordings + Fake Call ✅ done
+- [x] Local video/audio/photo capture via `camera`/`record`/`path_provider`,
+      saved under an on-device `evidence/` folder, with a Firestore
+      reference doc (`type`, `localPath`, `timestamp`, `durationOrSize`)
+      per file — never the media itself. Video and photo go through the
+      `camera` plugin (one shared `CameraController`, live preview on the
+      Recordings screen); Audio uses `record`'s file-based `AudioRecorder`
+      (already added in Phase 5 for Distress Listening) rather than
+      `camera`'s video recording, so an audio-only clip isn't stored as a
+      wasted video file. The clip list shown on the screen is now the real
+      Firestore-backed list, replacing the static seed data.
+- [x] Fake-call screen sequence — already fully real local UI/timers since
+      Phase 1, confirmed nothing left stubbed; no changes needed this phase.
+- **Camera lifecycle scoped to the screen, not sign-in**: unlike Sentinel/
+  Listen (deliberately global, background-service-based), the camera is
+  only requested/opened when the Recordings screen is actually visited
+  (`initCamera`/`disposeCamera` in its own `initState`/`dispose`) and
+  closed the moment it's left. Binding it globally at sign-in like the
+  other providers would mean prompting for camera permission before the
+  user ever opens this screen, and holding a camera open the whole time
+  the app runs — neither of which the design calls for.
+- Verify: `flutter analyze`/`flutter test` clean, 18/18 tests still
+  passing (no new tests this phase — the added logic is capture plumbing
+  and small string-formatting helpers, not the kind of decision logic the
+  other phases' heuristics needed). The user tests camera/mic capture and
+  the fake-call flow manually, and builds the APK themselves.
+
+---
+
+## All six phases are now built.
+
+Every screen, the two AI features, real Firebase, real native
+integrations, and real on-device capture are all wired up as described
+above. What's left is the user's own manual pass on a real device —
+especially Smart Sentinel's background survival and Distress Listening's
+real-world mic accuracy, which only real hardware over real time can
+actually judge.
 
 ---
 

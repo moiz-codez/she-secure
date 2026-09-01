@@ -141,6 +141,7 @@ class _AuthBinderState extends State<_AuthBinder> {
     final sentinel = context.read<SentinelProvider>();
     final listen = context.read<ListenProvider>();
     final sos = context.read<SosProvider>();
+    final recordings = context.read<RecordingsProvider>();
 
     if (uid != null) {
       contacts.bindUser(uid);
@@ -148,12 +149,14 @@ class _AuthBinderState extends State<_AuthBinder> {
       sentinel.bindUser(uid);
       listen.bindUser(uid);
       sos.bindUser(uid);
+      recordings.bindUser(uid);
     } else {
       contacts.unbind();
       settings.unbind();
       sentinel.unbindUser();
       listen.unbindUser();
       sos.unbind();
+      recordings.unbind();
     }
   }
 

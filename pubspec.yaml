@@ -50,6 +50,8 @@ dependencies:
   flutter_local_notifications: ^22.3.0
   record: ^7.1.1
   tflite_flutter: ^0.12.1
+  camera: ^0.12.0+2
+  path_provider: ^2.1.6
 
 
 # permission_handler_android 14.0.0 requires Android SDK Platform 37, whose

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -7,6 +9,7 @@ import '../providers/contacts_provider.dart';
 import '../providers/listen_provider.dart';
 import '../providers/sentinel_provider.dart';
 import '../providers/sos_provider.dart';
+import '../services/profile_photo_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/hold_to_confirm_button.dart';
 
@@ -411,15 +414,23 @@ class _HomeDrawer extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(20, 6, 20, 18),
               child: Row(
                 children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceAlt,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: AppColors.textMuted(0.1)),
-                    ),
-                    child: Icon(Icons.person_outline_rounded, size: 20, color: AppColors.textMuted(0.5)),
+                  FutureBuilder<String>(
+                    future: ProfilePhotoService.path(),
+                    builder: (context, snapshot) {
+                      final path = snapshot.data;
+                      final hasPhoto = path != null && File(path).existsSync();
+                      return Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceAlt,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: AppColors.textMuted(0.1)),
+                          image: hasPhoto ? DecorationImage(image: FileImage(File(path)), fit: BoxFit.cover) : null,
+                        ),
+                        child: hasPhoto ? null : Icon(Icons.person_outline_rounded, size: 20, color: AppColors.textMuted(0.5)),
+                      );
+                    },
                   ),
                   const SizedBox(width: 12),
                   Consumer2<AuthProvider, ContactsProvider>(

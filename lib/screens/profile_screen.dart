@@ -1,11 +1,16 @@
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../app.dart';
 import '../providers/auth_provider.dart';
+import '../services/profile_photo_service.dart';
+import '../services/recording_service.dart';
 import '../theme/app_colors.dart';
-import '../widgets/status_pill.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -20,6 +25,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _city = TextEditingController();
   bool _loaded = false;
   bool _saving = false;
+  bool _deleting = false;
+  String? _photoPath;
 
   String get _uid => context.read<AuthProvider>().user!.uid;
 
@@ -27,12 +34,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     _name.text = context.read<AuthProvider>().user?.displayName ?? '';
-    FirebaseFirestore.instance.collection('users').doc(_uid).get().then((doc) {
+    FirebaseFirestore.instance.collection('users').doc(_uid).get().then((doc) async {
       if (!mounted) return;
       final data = doc.data();
+      final path = await ProfilePhotoService.path();
       setState(() {
         _age.text = data?['age'] as String? ?? '';
         _city.text = data?['city'] as String? ?? '';
+        _photoPath = File(path).existsSync() ? path : null;
         _loaded = true;
       });
     });
@@ -44,6 +53,44 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _age.dispose();
     _city.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickPhoto() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: const Color(0xFF1A1C29),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined, color: AppColors.text),
+              title: const Text('Take a photo'),
+              onTap: () => Navigator.of(context).pop(ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_outlined, color: AppColors.text),
+              title: const Text('Choose from gallery'),
+              onTap: () => Navigator.of(context).pop(ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+
+    final picked = await ImagePicker().pickImage(source: source, imageQuality: 80, maxWidth: 800);
+    if (picked == null) return;
+
+    final path = await ProfilePhotoService.path();
+    await File(picked.path).copy(path);
+    await FirebaseFirestore.instance.collection('users').doc(_uid).set(
+      {'photoUrl': path},
+      SetOptions(merge: true),
+    );
+    if (!mounted) return;
+    setState(() => _photoPath = path);
   }
 
   Future<void> _save() async {
@@ -76,6 +123,118 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final navigator = Navigator.of(context);
     await context.read<AuthProvider>().signOut();
     navigator.pushNamedAndRemoveUntil(Routes.auth, (route) => false);
+  }
+
+  Future<void> _deleteCollection(CollectionReference<Map<String, dynamic>> ref) async {
+    final docs = await ref.get();
+    if (docs.docs.isEmpty) return;
+    final batch = FirebaseFirestore.instance.batch();
+    for (final doc in docs.docs) {
+      batch.delete(doc.reference);
+    }
+    await batch.commit();
+  }
+
+  /// Firebase Auth's own account deletion can throw `requires-recent-login`
+  /// if the session is old — asks for the password once and retries,
+  /// rather than failing with no way forward.
+  Future<bool> _reauthenticate() async {
+    final email = context.read<AuthProvider>().user?.email;
+    if (email == null) return false;
+    final passwordCtrl = TextEditingController();
+    final password = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Confirm your password'),
+        content: TextField(
+          controller: passwordCtrl,
+          obscureText: true,
+          decoration: const InputDecoration(labelText: 'Password'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(passwordCtrl.text),
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
+    if (password == null || password.isEmpty) return false;
+    try {
+      final credential = EmailAuthProvider.credential(email: email, password: password);
+      await FirebaseAuth.instance.currentUser!.reauthenticateWithCredential(credential);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _deleteAccount() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Delete your account?'),
+        content: const Text(
+          'This permanently deletes your account, trusted contacts, SOS history, and settings. '
+          'Recordings already saved on this phone are also removed. This can\'t be undone.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text('Delete account', style: TextStyle(color: AppColors.danger)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() => _deleting = true);
+    try {
+      await _performDelete();
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'requires-recent-login') {
+        final reauthed = await _reauthenticate();
+        if (reauthed) {
+          await _performDelete();
+        } else if (mounted) {
+          setState(() => _deleting = false);
+        }
+        return;
+      }
+      if (mounted) {
+        setState(() => _deleting = false);
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text('Couldn\'t delete your account: ${e.message}')));
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _deleting = false);
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text('Couldn\'t delete your account: $e')));
+      }
+    }
+  }
+
+  Future<void> _performDelete() async {
+    final uid = _uid;
+    final userDoc = FirebaseFirestore.instance.collection('users').doc(uid);
+    for (final name in ['contacts', 'sosHistory', 'settings', 'sentinelSamples', 'evidence']) {
+      await _deleteCollection(userDoc.collection(name));
+    }
+    await userDoc.delete();
+
+    final evidenceDir = await RecordingService.evidenceDirectory();
+    if (await evidenceDir.exists()) await evidenceDir.delete(recursive: true);
+
+    await FirebaseAuth.instance.currentUser!.delete();
+    if (!mounted) return;
+    Navigator.of(context).pushNamedAndRemoveUntil(Routes.auth, (route) => false);
   }
 
   @override
@@ -115,15 +274,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 color: AppColors.surfaceAlt,
                                 shape: BoxShape.circle,
                                 border: Border.all(color: AppColors.textMuted(0.1)),
+                                image: _photoPath == null
+                                    ? null
+                                    : DecorationImage(image: FileImage(File(_photoPath!)), fit: BoxFit.cover),
                               ),
-                              child: Icon(Icons.person_outline_rounded, size: 40, color: AppColors.textMuted(0.35)),
+                              child: _photoPath == null
+                                  ? Icon(Icons.person_outline_rounded, size: 40, color: AppColors.textMuted(0.35))
+                                  : null,
                             ),
                             Positioned(
                               right: -3,
                               bottom: -3,
                               child: InkWell(
                                 customBorder: const CircleBorder(),
-                                onTap: () => showNotBuiltSnack(context),
+                                onTap: _pickPhoto,
                                 child: Container(
                                   width: 34,
                                   height: 34,
@@ -224,6 +388,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                         icon: const Icon(Icons.logout_rounded, size: 18),
                         label: const Text('Log out', style: TextStyle(fontSize: 14)),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(22, 6, 22, 0),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: TextButton.icon(
+                        onPressed: _deleting ? null : _deleteAccount,
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.danger,
+                          padding: const EdgeInsets.all(13),
+                          alignment: Alignment.centerLeft,
+                        ),
+                        icon: _deleting
+                            ? SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.danger),
+                              )
+                            : const Icon(Icons.delete_forever_outlined, size: 18),
+                        label: const Text('Delete account', style: TextStyle(fontSize: 14)),
                       ),
                     ),
                   ),

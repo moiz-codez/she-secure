@@ -55,6 +55,7 @@ dependencies:
   share_plus: ^13.3.0
   gal: ^2.3.3
   flutter_ringtone_player: ^4.0.0+4
+  image_picker: ^1.2.3
 
 
 # permission_handler_android 14.0.0 requires Android SDK Platform 37, whose

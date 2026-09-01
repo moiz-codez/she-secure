@@ -68,6 +68,21 @@ subprojects {
     }
 }
 
+// flutter_ringtone_player hardcodes compileSdkVersion 33 in its own
+// build.gradle, but several of its own androidx dependencies (fragment,
+// activity, lifecycle-*, core-ktx, etc.) now require compileSdk 34+ —
+// AGP's AAR-metadata check rejects that mismatch. Bump it to match the
+// rest of this project's toolchain.
+subprojects {
+    if (project.name == "flutter_ringtone_player") {
+        afterEvaluate {
+            extensions.findByType(com.android.build.gradle.BaseExtension::class.java)?.apply {
+                compileSdkVersion(36)
+            }
+        }
+    }
+}
+
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }

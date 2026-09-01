@@ -11,6 +11,8 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:provider/provider.dart';
 import 'package:record/record.dart';
+import 'package:screen_state_v2/screen_state.dart';
+import 'package:sensors_plus/sensors_plus.dart';
 
 import '../app.dart';
 import '../firebase_options.dart';
@@ -151,6 +153,28 @@ int _screamStreak = 0;
 
 Timer? _fakeCallTimer;
 
+bool _shakeOn = false;
+StreamSubscription<UserAccelerometerEvent>? _shakeSub;
+final List<DateTime> _shakePeaks = [];
+
+bool _powerButtonOn = false;
+StreamSubscription<ScreenStateEvent>? _screenSub;
+final List<DateTime> _screenToggles = [];
+
+/// A shake hard enough to matter, not just walking/pocket jostle.
+const _shakeThreshold = 22.0; // m/s², well above normal handling
+const _shakePeaksNeeded = 3;
+const _shakeWindow = Duration(seconds: 2);
+
+/// Real physical power-button KeyEvents aren't delivered to regular apps
+/// at all — this approximates "press power 3x quickly" via the same
+/// screen-on/off toggles a power button press causes, which is the
+/// standard technique non-privileged apps use for this gesture. Not a
+/// perfect proxy (anything else that toggles the screen counts too), but
+/// it needs no special permission and works with the screen locked.
+const _powerTogglesNeeded = 4; // ~2 presses' worth of on/off transitions
+const _powerWindow = Duration(seconds: 3);
+
 @pragma('vm:entry-point')
 void _onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
@@ -197,12 +221,34 @@ void _onStart(ServiceInstance service) async {
       }
     }
 
-    // A fake call scheduled for later shouldn't be cut off just because
-    // Sentinel/Listen both happen to be off.
-    if (!_sentinelOn && !_listenOn && _fakeCallTimer == null) {
+    if (event.containsKey('shakeOn')) {
+      final wasOn = _shakeOn;
+      _shakeOn = event['shakeOn'] as bool? ?? false;
+      if (_shakeOn && !wasOn) {
+        _startShakeDetection(service);
+      } else if (!_shakeOn && wasOn) {
+        _stopShakeDetection();
+      }
+    }
+
+    if (event.containsKey('powerButtonOn')) {
+      final wasOn = _powerButtonOn;
+      _powerButtonOn = event['powerButtonOn'] as bool? ?? false;
+      if (_powerButtonOn && !wasOn) {
+        _startPowerButtonDetection(service);
+      } else if (!_powerButtonOn && wasOn) {
+        _stopPowerButtonDetection();
+      }
+    }
+
+    // A fake call scheduled for later, or a still-armed shortcut, shouldn't
+    // be cut off just because Sentinel/Listen both happen to be off.
+    if (!_sentinelOn && !_listenOn && !_shakeOn && !_powerButtonOn && _fakeCallTimer == null) {
       _sampleTimer?.cancel();
       _checkInTimer?.cancel();
       _stopMicStream();
+      _stopShakeDetection();
+      _stopPowerButtonDetection();
       service.stopSelf();
     }
   });
@@ -247,6 +293,8 @@ void _onStart(ServiceInstance service) async {
     _fakeCallTimer?.cancel();
     _fakeCallTimer = null;
     _stopMicStream();
+    _stopShakeDetection();
+    _stopPowerButtonDetection();
     service.stopSelf();
   });
 
@@ -332,6 +380,49 @@ void _stopMicStream() {
   _recorder?.dispose();
   _recorder = null;
   _micBuffer.clear();
+}
+
+void _startShakeDetection(ServiceInstance service) {
+  _shakePeaks.clear();
+  _shakeSub?.cancel();
+  _shakeSub = userAccelerometerEventStream().listen((event) {
+    final magnitude = sqrt(event.x * event.x + event.y * event.y + event.z * event.z);
+    if (magnitude < _shakeThreshold) return;
+    final now = DateTime.now();
+    _shakePeaks.add(now);
+    _shakePeaks.removeWhere((t) => now.difference(t) > _shakeWindow);
+    if (_shakePeaks.length >= _shakePeaksNeeded) {
+      _shakePeaks.clear();
+      unawaited(_fireAlert(source: 'Shake to alert').then((_) => service.invoke('shortcutFired')));
+    }
+  });
+}
+
+void _stopShakeDetection() {
+  _shakeSub?.cancel();
+  _shakeSub = null;
+  _shakePeaks.clear();
+}
+
+void _startPowerButtonDetection(ServiceInstance service) {
+  _screenToggles.clear();
+  _screenSub?.cancel();
+  _screenSub = Screen().screenStateStream.listen((event) {
+    if (event == ScreenStateEvent.SCREEN_UNLOCKED) return;
+    final now = DateTime.now();
+    _screenToggles.add(now);
+    _screenToggles.removeWhere((t) => now.difference(t) > _powerWindow);
+    if (_screenToggles.length >= _powerTogglesNeeded) {
+      _screenToggles.clear();
+      unawaited(_fireAlert(source: 'Power button ×3').then((_) => service.invoke('shortcutFired')));
+    }
+  });
+}
+
+void _stopPowerButtonDetection() {
+  _screenSub?.cancel();
+  _screenSub = null;
+  _screenToggles.clear();
 }
 
 const _bytesPerWindow = _yamnetWindowSamples * 2; // PCM16 = 2 bytes/sample

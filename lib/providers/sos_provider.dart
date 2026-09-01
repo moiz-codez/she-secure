@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 
 import '../models/sos_event.dart';
 import '../services/location_service.dart';
@@ -37,6 +38,7 @@ class SosProvider extends ChangeNotifier {
   List<SosHistoryEntry> history = const [];
   CollectionReference<Map<String, dynamic>>? _historyCollection;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _historySub;
+  StreamSubscription<Map<String, dynamic>?>? _shortcutSub;
 
   void bindUser(String uid) {
     _historySub?.cancel();
@@ -52,6 +54,11 @@ class SosProvider extends ChangeNotifier {
       }).toList();
       notifyListeners();
     });
+    // Shake / power-button ×3 fire directly from the background service
+    // (no dedicated foreground screen owns them) — this just reflects the
+    // resulting armed state here if the app happens to be open, same as
+    // Sentinel/Listen's own escalation events.
+    _shortcutSub ??= FlutterBackgroundService().on('shortcutFired').listen((_) => markArmedExternally());
   }
 
   void unbind() {
@@ -174,6 +181,7 @@ class SosProvider extends ChangeNotifier {
     _countdownTimer?.cancel();
     _elapsedTimer?.cancel();
     _historySub?.cancel();
+    _shortcutSub?.cancel();
     super.dispose();
   }
 }

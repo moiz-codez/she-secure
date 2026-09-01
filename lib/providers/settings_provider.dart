@@ -4,6 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../services/sentinel_service.dart';
+
 class SettingRow {
   const SettingRow({required this.key, required this.label, required this.sub});
 
@@ -50,6 +52,7 @@ class SettingsProvider extends ChangeNotifier {
   Map<String, bool> features = Map.of(_defaultFeatures);
   DocumentReference<Map<String, dynamic>>? _doc;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _sub;
+  String? _uid;
 
   static const rows = [
     SettingRow(key: 'sos', label: 'SOS button', sub: 'The main emergency alert'),
@@ -100,6 +103,7 @@ class SettingsProvider extends ChangeNotifier {
   bool isOn(String key) => features[key] ?? false;
 
   void bindUser(String uid) {
+    _uid = uid;
     _sub?.cancel();
     _doc = FirebaseFirestore.instance.collection('users').doc(uid).collection('settings').doc('preferences');
     _sub = _doc!.snapshots().listen((snap) {
@@ -109,6 +113,7 @@ class SettingsProvider extends ChangeNotifier {
           ? Map.of(_defaultFeatures)
           : {for (final k in _defaultFeatures.keys) k: (stored[k] as bool?) ?? _defaultFeatures[k]!};
       notifyListeners();
+      _pushShortcutConfig();
     });
   }
 
@@ -116,6 +121,7 @@ class SettingsProvider extends ChangeNotifier {
     _sub?.cancel();
     _sub = null;
     _doc = null;
+    _uid = null;
     features = Map.of(_defaultFeatures);
     notifyListeners();
   }
@@ -124,6 +130,20 @@ class SettingsProvider extends ChangeNotifier {
     features[key] = !(features[key] ?? false);
     notifyListeners();
     _doc?.set({'features': features}, SetOptions(merge: true));
+  }
+
+  /// Shake-to-alert and Power button ×3 run in the shared background
+  /// service (like Sentinel/Listen) so they still work with the screen
+  /// locked — pushed here, from whichever settings change touches them,
+  /// rather than needing a dedicated screen/provider of their own.
+  Future<void> _pushShortcutConfig() async {
+    if (_uid == null) return;
+    final shakeOn = isOn('shake');
+    final powerOn = isOn('power');
+    await pushBackgroundConfig(
+      {'uid': _uid, 'shakeOn': shakeOn, 'powerButtonOn': powerOn},
+      needed: shakeOn || powerOn,
+    );
   }
 
   @override

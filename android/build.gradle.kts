@@ -68,13 +68,16 @@ subprojects {
     }
 }
 
-// flutter_ringtone_player hardcodes compileSdkVersion 33 in its own
-// build.gradle, but several of its own androidx dependencies (fragment,
-// activity, lifecycle-*, core-ktx, etc.) now require compileSdk 34+ —
-// AGP's AAR-metadata check rejects that mismatch. Bump it to match the
-// rest of this project's toolchain.
+// Several plugins hardcode compileSdkVersion 33 in their own build.gradle,
+// but their transitively-resolved androidx dependencies (fragment, activity,
+// lifecycle-*, core-ktx, etc. — bumped up to whatever version other plugins
+// in the graph request, not necessarily what each plugin itself declares)
+// now require compileSdk 34+. AGP's AAR-metadata check rejects that
+// mismatch. Bump each to match the rest of this project's toolchain as
+// they're found, rather than waiting on each one's own release.
+val staleCompileSdkModules = setOf("flutter_ringtone_player", "media_store_plus")
 subprojects {
-    if (project.name == "flutter_ringtone_player") {
+    if (project.name in staleCompileSdkModules) {
         afterEvaluate {
             extensions.findByType(com.android.build.gradle.BaseExtension::class.java)?.apply {
                 compileSdkVersion(36)

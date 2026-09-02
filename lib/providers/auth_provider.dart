@@ -18,6 +18,35 @@ class AuthProvider extends ChangeNotifier {
   User? user;
   late final StreamSubscription<User?> _sub;
 
+  /// The display name shown everywhere in the UI — sourced from Firestore's
+  /// `users/{uid}.name`, not `user.displayName`. Firebase Auth's own
+  /// displayName is a cached copy that only refreshes on ID-token renewal,
+  /// so screens reading it directly could show a stale or empty name after
+  /// Profile saved a new one, or never converge at all. Firestore is this
+  /// app's actual source of truth for the name (see CLAUDE.md's schema);
+  /// this listener is bound/unbound alongside every other per-user provider
+  /// in `_AuthBinder`.
+  String? profileName;
+  DocumentReference<Map<String, dynamic>>? _profileDoc;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _profileSub;
+
+  void bindProfile(String uid) {
+    _profileSub?.cancel();
+    _profileDoc = FirebaseFirestore.instance.collection('users').doc(uid);
+    _profileSub = _profileDoc!.snapshots().listen((snap) {
+      profileName = snap.data()?['name'] as String?;
+      notifyListeners();
+    });
+  }
+
+  void unbindProfile() {
+    _profileSub?.cancel();
+    _profileSub = null;
+    _profileDoc = null;
+    profileName = null;
+    notifyListeners();
+  }
+
   bool get isSignedIn => user != null;
 
   Future<void> signIn({required String email, required String password}) {
@@ -45,6 +74,7 @@ class AuthProvider extends ChangeNotifier {
   @override
   void dispose() {
     _sub.cancel();
+    _profileSub?.cancel();
     super.dispose();
   }
 }

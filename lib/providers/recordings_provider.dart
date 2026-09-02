@@ -4,8 +4,8 @@ import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:gal/gal.dart';
 import 'package:media_store_plus/media_store_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 
@@ -193,7 +193,7 @@ class RecordingsProvider extends ChangeNotifier {
       final dest = '${dir.path}/${RecordingService.filePath('photo', 'jpg')}';
       await File(shot.path).copy(dest);
       final sizeBytes = await File(dest).length();
-      await _bestEffort(() => Gal.putImage(dest, album: 'She Secure'));
+      await _bestEffort(() => _indexToMediaStore(dest, dirType: DirType.photo, dirName: DirName.pictures));
       await _saveReference(type: 'photo', localPath: dest, durationOrSize: RecordingService.formatBytes(sizeBytes));
     } catch (e) {
       onError?.call('Couldn\'t save the photo: $e');
@@ -234,7 +234,7 @@ class RecordingsProvider extends ChangeNotifier {
       final dest = '${dir.path}/${RecordingService.filePath('video', 'mp4')}';
       await File(captured.path).copy(dest);
       final sizeBytes = await File(dest).length();
-      await _bestEffort(() => Gal.putVideo(dest, album: 'She Secure'));
+      await _bestEffort(() => _indexToMediaStore(dest, dirType: DirType.video, dirName: DirName.movies));
       await _saveReference(
         type: 'video',
         localPath: dest,
@@ -276,9 +276,7 @@ class RecordingsProvider extends ChangeNotifier {
       final path = await _audioRecorder.stop();
       if (path == null) return;
       final sizeBytes = await File(path).length();
-      await _bestEffort(() async {
-        await MediaStore().saveFile(tempFilePath: path, dirType: DirType.audio, dirName: DirName.music);
-      });
+      await _bestEffort(() => _indexToMediaStore(path, dirType: DirType.audio, dirName: DirName.music));
       await _saveReference(
         type: 'audio',
         localPath: path,
@@ -297,6 +295,38 @@ class RecordingsProvider extends ChangeNotifier {
     } catch (_) {}
   }
 
+  /// Indexes a capture into the phone's shared Gallery/Music collections
+  /// via `media_store_plus`, so it shows up outside the app too (photos in
+  /// the Gallery app, video the same, audio in the phone's recordings/
+  /// music app) — and, unlike `gal` (which has no delete API at all), can
+  /// later be removed from there by [deleteClip].
+  ///
+  /// `MediaStore().saveFile` copies from `tempFilePath` and then *deletes*
+  /// it (that's the whole point of the "temp" in the name) — so this
+  /// always hands it a throwaway copy, never [localPath] itself. Passing
+  /// the app's own evidence-folder file directly used to work for
+  /// photo/video by accident (nothing else needed that path again) but
+  /// broke audio outright: the file `RecordingClip.localPath` pointed at,
+  /// and that "Open" used, was gone the moment this call returned.
+  Future<void> _indexToMediaStore(String localPath, {required DirType dirType, required DirName dirName}) async {
+    final tempDir = await getTemporaryDirectory();
+    final tempCopy = '${tempDir.path}/${localPath.split('/').last}';
+    await File(localPath).copy(tempCopy);
+    await MediaStore().saveFile(tempFilePath: tempCopy, dirType: dirType, dirName: dirName);
+  }
+
+  static DirType _dirTypeFor(String type) => switch (type) {
+        'photo' => DirType.photo,
+        'video' => DirType.video,
+        _ => DirType.audio,
+      };
+
+  static DirName _dirNameFor(String type) => switch (type) {
+        'photo' => DirName.pictures,
+        'video' => DirName.movies,
+        _ => DirName.music,
+      };
+
   Future<void> _saveReference({required String type, required String localPath, required String durationOrSize}) {
     final collection = _evidenceCollection;
     if (collection == null) return Future.value();
@@ -308,19 +338,25 @@ class RecordingsProvider extends ChangeNotifier {
     });
   }
 
-  /// Deletes the app's own private copy and its Firestore reference. A
-  /// copy already saved to the shared Gallery (photos/video) is left in
-  /// place — `gal` has no delete API, and most apps' own Gallery saves
-  /// behave the same way once they're out of the app's hands.
+  /// Deletes the app's own private copy, its indexed copy in the shared
+  /// Gallery/Music collection (best-effort — already-missing there is
+  /// fine), and its Firestore reference.
   Future<void> deleteClip(int index) async {
     final collection = _evidenceCollection;
     if (collection == null || index >= _docIds.length) return;
     try {
       final doc = await collection.doc(_docIds[index]).get();
-      final localPath = doc.data()?['localPath'] as String?;
+      final data = doc.data();
+      final localPath = data?['localPath'] as String?;
+      final type = data?['type'] as String? ?? 'video';
       if (localPath != null) {
         final file = File(localPath);
         if (await file.exists()) await file.delete();
+        await _bestEffort(() => MediaStore().deleteFile(
+              fileName: localPath.split('/').last,
+              dirType: _dirTypeFor(type),
+              dirName: _dirNameFor(type),
+            ));
       }
       await collection.doc(_docIds[index]).delete();
     } catch (e) {

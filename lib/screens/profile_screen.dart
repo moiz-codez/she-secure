@@ -245,7 +245,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final user = context.watch<AuthProvider>().user;
+    final auth = context.watch<AuthProvider>();
+    final user = auth.user;
 
     return Scaffold(
       body: SafeArea(
@@ -310,7 +311,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                         const SizedBox(height: 14),
                         Text(
-                          user?.displayName?.isNotEmpty == true ? user!.displayName! : 'She Secure user',
+                          auth.profileName?.isNotEmpty == true ? auth.profileName! : 'She Secure user',
                           style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500),
                         ),
                         Padding(

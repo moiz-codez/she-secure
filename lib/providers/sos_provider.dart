@@ -14,7 +14,7 @@ enum SosState { idle, counting, armed }
 
 /// Drives the SOS alert lifecycle: idle -> counting (5s, cancellable) ->
 /// armed (live until stopped). Ports the design canvas's `sos`/`count`/
-/// `elapsed`/`acked` state 1:1; the press-and-hold *progress* itself is
+/// `elapsed` state 1:1; the press-and-hold *progress* itself is
 /// owned by [HoldToConfirmButton] instances in the UI, which call
 /// [beginCountdown] / [cancel] here on completion.
 ///
@@ -30,7 +30,6 @@ class SosProvider extends ChangeNotifier {
   SosState state = SosState.idle;
   int count = 5;
   int elapsed = 0;
-  int acked = 0;
 
   Timer? _countdownTimer;
   Timer? _elapsedTimer;
@@ -109,7 +108,6 @@ class SosProvider extends ChangeNotifier {
     _countdownTimer?.cancel();
     state = SosState.armed;
     elapsed = 0;
-    acked = 0;
     notifyListeners();
     _elapsedTimer?.cancel();
     _elapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -125,14 +123,10 @@ class SosProvider extends ChangeNotifier {
     _countdownTimer?.cancel();
     state = SosState.armed;
     elapsed = 0;
-    acked = 0;
     notifyListeners();
     _elapsedTimer?.cancel();
     _elapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       elapsed += 1;
-      if (elapsed == 3) acked = 1;
-      if (elapsed == 6) acked = 2;
-      if (elapsed == 11) acked = 3;
       notifyListeners();
     });
 
@@ -172,7 +166,6 @@ class SosProvider extends ChangeNotifier {
     state = SosState.idle;
     count = 5;
     elapsed = 0;
-    acked = 0;
     notifyListeners();
   }
 

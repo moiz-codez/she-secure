@@ -8,7 +8,7 @@ import 'package:she_secure/providers/contacts_provider.dart';
 import 'package:she_secure/providers/sos_provider.dart';
 
 void main() {
-  testWidgets('SOS: countdown then arm, with contact-ack timeline', (tester) async {
+  testWidgets('SOS: countdown then arm, elapsed timer ticking', (tester) async {
     final sos = SosProvider(contacts: ContactsProvider());
     addTearDown(sos.dispose);
 
@@ -20,14 +20,11 @@ void main() {
     await tester.pump(const Duration(seconds: 5));
     expect(sos.state, SosState.armed);
     expect(sos.elapsed, 0);
-    expect(sos.acked, 0);
 
     await tester.pump(const Duration(seconds: 3));
-    expect(sos.acked, 1);
-    await tester.pump(const Duration(seconds: 3));
-    expect(sos.acked, 2);
+    expect(sos.elapsed, 3);
     await tester.pump(const Duration(seconds: 5));
-    expect(sos.acked, 3);
+    expect(sos.elapsed, 8);
 
     // Stop the still-running elapsed timer before the test ends — flutter_test
     // asserts no timers are left pending when a test finishes.

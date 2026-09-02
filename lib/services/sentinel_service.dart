@@ -241,9 +241,24 @@ void _onStart(ServiceInstance service) async {
       }
     }
 
-    // A fake call scheduled for later, or a still-armed shortcut, shouldn't
-    // be cut off just because Sentinel/Listen both happen to be off.
-    if (!_sentinelOn && !_listenOn && !_shakeOn && !_powerButtonOn && _fakeCallTimer == null) {
+    // A caller that just needs the service *running* (Fake Call's
+    // scheduleCall, Distress Listening's simulate button) sends an empty
+    // `configure` purely to trigger pushBackgroundConfig's startService()
+    // — it carries none of the toggle keys above. Without this guard, that
+    // empty ping fell straight through to the check below with every
+    // toggle still at its old value and _fakeCallTimer not yet set (the
+    // real 'scheduleFakeCall' message hadn't been processed yet), so the
+    // service stopped itself milliseconds after starting — the schedule
+    // (or the scream simulation) that was about to follow never landed,
+    // and shake/power-button detection got killed as collateral damage
+    // any time this happened while they were the only things running.
+    // Only re-evaluate "is anything still needed" when this message
+    // actually changed one of the toggles.
+    final touchedToggle = event.containsKey('sentinelOn') ||
+        event.containsKey('listenOn') ||
+        event.containsKey('shakeOn') ||
+        event.containsKey('powerButtonOn');
+    if (touchedToggle && !_sentinelOn && !_listenOn && !_shakeOn && !_powerButtonOn && _fakeCallTimer == null) {
       _sampleTimer?.cancel();
       _checkInTimer?.cancel();
       _stopMicStream();

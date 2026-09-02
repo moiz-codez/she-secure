@@ -8,15 +8,23 @@ class SmsService {
   static final _telephony = Telephony.instance;
 
   /// Sends [message] to every number in [numbers]. Returns false if SMS
-  /// permission was denied; otherwise fires each send and returns true
-  /// (individual per-number failures aren't awaited/reported — this is a
-  /// best-effort broadcast, matching the SOS button's own semantics).
+  /// permission was denied; otherwise attempts every contact and returns
+  /// true. Each send is wrapped individually — `sendSms` throws a
+  /// `PlatformException` for a single malformed/unreachable number (a
+  /// contact saved without a country code, for example), and an uncaught
+  /// throw here would abort the loop and silently skip every contact after
+  /// the bad one. One contact failing to send must never stop the rest.
   static Future<bool> sendToAll(List<String> numbers, String message) async {
     if (numbers.isEmpty) return true;
     final status = await Permission.sms.request();
     if (!status.isGranted) return false;
     for (final number in numbers) {
-      await _telephony.sendSms(to: number, message: message);
+      try {
+        await _telephony.sendSms(to: number, message: message);
+      } catch (_) {
+        // Best-effort per contact — keep going so one bad number doesn't
+        // take the rest of the broadcast down with it.
+      }
     }
     return true;
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../models/sos_event.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/sos_provider.dart';
 import '../theme/app_colors.dart';
@@ -252,45 +253,92 @@ class _IdleBody extends StatelessWidget {
                       style: TextStyle(fontSize: 9.5, letterSpacing: 1.1, color: AppColors.textMuted(0.35)),
                     ),
                     TextButton(
-                      onPressed: () => showNotBuiltSnack(context),
+                      onPressed: sos.history.isEmpty
+                          ? null
+                          : () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const _AllAlertsScreen())),
                       style: TextButton.styleFrom(foregroundColor: AppColors.accent, padding: EdgeInsets.zero),
                       child: const Text('See all', style: TextStyle(fontSize: 11.5)),
                     ),
                   ],
                 ),
-                for (final entry in sos.history)
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 2),
-                    decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.textMuted(0.07)))),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(color: AppColors.accentTint(0.12), shape: BoxShape.circle),
-                          child: const Icon(Icons.campaign_rounded, size: 15, color: AppColors.accent),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(entry.where, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-                              Text(
-                                '${entry.when} · ${entry.detail}',
-                                style: TextStyle(fontSize: 11.5, color: AppColors.textMuted(0.45)),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Icon(Icons.chevron_right_rounded, size: 14, color: AppColors.textMuted(0.3)),
-                      ],
-                    ),
-                  ),
+                for (final entry in sos.history.take(3)) _HistoryRow(entry: entry),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _HistoryRow extends StatelessWidget {
+  const _HistoryRow({required this.entry});
+
+  final SosHistoryEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 2),
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.textMuted(0.07)))),
+      child: Row(
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(color: AppColors.accentTint(0.12), shape: BoxShape.circle),
+            child: const Icon(Icons.campaign_rounded, size: 15, color: AppColors.accent),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(entry.where, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                Text(
+                  '${entry.when} · ${entry.detail}',
+                  style: TextStyle(fontSize: 11.5, color: AppColors.textMuted(0.45)),
+                ),
+              ],
+            ),
+          ),
+          Icon(Icons.chevron_right_rounded, size: 14, color: AppColors.textMuted(0.3)),
+        ],
+      ),
+    );
+  }
+}
+
+class _AllAlertsScreen extends StatelessWidget {
+  const _AllAlertsScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    final history = context.watch<SosProvider>().history;
+    return Scaffold(
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 14, 12, 0),
+              child: Row(
+                children: [
+                  IconButton(
+                    onPressed: () => Navigator.of(context).maybePop(),
+                    icon: const Icon(Icons.arrow_back_rounded, size: 21, color: AppColors.text),
+                  ),
+                  const Text('All alerts', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, letterSpacing: -0.16)),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(22, 10, 22, 26),
+                children: [for (final entry in history) _HistoryRow(entry: entry)],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -465,9 +513,9 @@ class _ArmedBody extends StatelessWidget {
                             ),
                           ),
                           StatusPill(
-                            label: i < sos.acked ? 'Seen' : 'Sent',
-                            background: i < sos.acked ? AppColors.successBg : AppColors.surfaceAlt,
-                            foreground: i < sos.acked ? AppColors.successText : AppColors.textMuted(0.55),
+                            label: 'Sent',
+                            background: AppColors.surfaceAlt,
+                            foreground: AppColors.textMuted(0.55),
                           ),
                         ],
                       ),

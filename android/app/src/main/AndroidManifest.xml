@@ -15,9 +15,10 @@
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false"/>
-    <!-- Required by gal (saves recorded evidence to the shared Gallery) on API <= 29.
-         camera_android_camerax's own manifest declares the same permission at
-         maxSdkVersion 28; tools:replace lets ours (29, gal's actual requirement) win. -->
+    <!-- Required by media_store_plus (indexes recorded evidence into the shared
+         Gallery/Music collections) on API <= 29. camera_android_camerax's own
+         manifest declares the same permission at maxSdkVersion 28; tools:replace
+         lets ours (29, media_store_plus's actual requirement) win. -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29"
         tools:replace="android:maxSdkVersion"/>
@@ -33,13 +34,22 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:requestLegacyExternalStorage="true">
+        <!-- screenOrientation alone locks the activity to portrait.
+             resizeableActivity="false" was tried alongside it to fix the
+             splash rendering into a narrow letterboxed column, but that's
+             very likely backwards: a fixed-orientation activity that also
+             declares itself non-resizable is exactly what makes modern
+             Android (12L+) apply size-compat letterboxing on any screen
+             whose aspect ratio isn't a plain phone's, pillarboxing the app
+             into a phone-shaped box instead of filling the real window —
+             matching the reported symptom instead of fixing it. Dropped;
+             orientation stays locked without also opting out of resizing. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""
             android:screenOrientation="portrait"
-            android:resizeableActivity="false"
             android:theme="@style/LaunchTheme"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"

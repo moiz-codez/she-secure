@@ -82,7 +82,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                     const SizedBox(height: 5),
                     Consumer<AuthProvider>(
                       builder: (context, auth, _) => Text(
-                        auth.user?.displayName?.isNotEmpty == true ? auth.user!.displayName! : 'there',
+                        auth.profileName?.isNotEmpty == true ? auth.profileName! : 'there',
                         style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w500, letterSpacing: -0.5),
                       ),
                     ),
@@ -438,7 +438,7 @@ class _HomeDrawer extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          auth.user?.displayName?.isNotEmpty == true ? auth.user!.displayName! : 'She Secure',
+                          auth.profileName?.isNotEmpty == true ? auth.profileName! : 'She Secure',
                           style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w500),
                         ),
                         Text(

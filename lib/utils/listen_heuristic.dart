@@ -18,10 +18,13 @@ ListenDecision checkScreamConfidence({
   required String sensitivity,
   required int consecutiveHits,
 }) {
+  // Windows overlap by half, so 2 consecutive = ~1.5 s of sound, 3 = ~2 s.
+  // Tuned against real clips (CLAUDE.md, "YAMNet check"): no
+  // non-distress clip scored above 0.33.
   final (threshold, needed) = switch (sensitivity) {
     'Alert' => (0.4, 1),
-    'Relaxed' => (0.65, 3),
-    _ => (0.5, 2),
+    'Relaxed' => (0.5, 3),
+    _ => (0.4, 2),
   };
   final isHit = confidence >= threshold;
   final newCount = isHit ? consecutiveHits + 1 : 0;

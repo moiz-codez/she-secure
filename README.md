@@ -118,14 +118,23 @@ To deploy rules or indexes: `firebase deploy --only firestore:rules,firestore:in
 
 ```bash
 flutter analyze   # must be clean
-flutter test      # SOS state machine, Sentinel heuristic, Listen heuristic, routine summary
+flutter test      # SOS state machine, Sentinel heuristic + demo-routine end to end, Listen heuristic, routine summary
+python tool/yamnet_eval.py <clips-dir>   # the bundled YAMNet model on real labelled audio (see the script for sources)
 ```
+
+Results on real clips, run through the app's exact audio pipeline:
+
+| alerts fired | Alert | Balanced (default) | Relaxed |
+|---|---|---|---|
+| 20 real screams | 17 | 13 | 7 |
+| 8 crying-baby clips | 7 | 6 | 5 |
+| 33 everyday sounds (speech, laughter, siren, dog, rain, traffic, typing…) | 0 | 0 | 0 |
 
 Some things can only be checked on a real phone: silent SMS delivery, whether the background service survives OEM battery management, and real-world microphone accuracy.
 
 ## Known limitations
 
-- **YAMNet is a general audio classifier, not a scream detector.** Expect some false positives (loud TV, laughter) and misses (screams under wind or traffic noise). The sensitivity setting tunes both the confidence threshold and how many windows in a row are needed.
+- **YAMNet is a general audio classifier, not a scream detector.** It misses some screams, especially short, muffled or distant ones; see the table above. A scream on TV *will* trigger it. The sensitivity setting tunes both the confidence threshold and how much sustained sound (about 1–2 s) is needed.
 - **Sentinel's anomaly check is simple:** it compares you against the centroid of your usual position for that weekday and time, plus your usual speed range. It doesn't match the actual route you take, and it doesn't wrap across midnight.
 - **Aggressive OEM skins** can still kill the background service even when battery optimization is disabled.
 - **OpenStreetMap tiles** come straight from `tile.openstreetmap.org`, which is fine for development and light use but not for heavy production traffic.

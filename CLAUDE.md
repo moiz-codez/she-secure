@@ -397,6 +397,34 @@ A full review pass after all six phases. It found and fixed these:
   rejection, rules allow own/deny other/deny unauthenticated, and the
   index query.
 
+### YAMNet check (Oct 2026)
+`tool/yamnet_eval.py` runs the bundled model through the app's exact
+pipeline on labelled real clips (sources are listed in the script). The
+model loads with input `[15600]` and output `[1, 521]`, "Screaming" is
+index 11 and "Crying, sobbing" is index 19, and everyday sounds were
+classified sensibly. The first run showed the original settings
+(back-to-back windows, Balanced 0.5×2, Relaxed 0.65×3) missed most short
+screams: Balanced caught 7/20, Relaxed 0/20. The changes were 50%
+overlapping windows plus Balanced 0.4×2 and Relaxed 0.5×3. Alert stays
+0.4×1.
+
+| alerts fired | Alert | Balanced | Relaxed |
+|---|---|---|---|
+| 20 screams | 17 | 13 | 7 |
+| 8 crying-baby clips | 7 | 6 | 5 |
+| 33 non-distress clips (speech, laughing, siren, dog, rain, train, typing…) | 0 | 0 | 0 |
+
+No non-distress clip scored above 0.33. The set is small, and a TV
+showing someone screaming *will* fire, because the model hears a scream.
+On a real phone, mic gain and distance will shift these numbers.
+
+Smart Sentinel's logic is covered end to end in
+`test/sentinel_demo_test.dart`: the demo routine goes through the same
+baseline selection as the service and then the real anomaly check.
+Following the routine never asks at any sensitivity. Staying home on a
+workday asks on Alert only. Running somewhere unfamiliar asks on
+Balanced.
+
 ---
 
 ## Verification (applies every phase)

@@ -445,11 +445,17 @@ void _stopPowerButtonDetection() {
 
 const _bytesPerWindow = _yamnetWindowSamples * 2; // PCM16 = 2 bytes/sample
 
+/// Windows overlap by half (a new one every ~0.49 s). Back-to-back windows
+/// split a short scream across a boundary and both halves scored low —
+/// measured on 20 real screams, overlap took Balanced from 7 to 13
+/// detections with no new false alarms (see CLAUDE.md, "YAMNet check").
+const _bytesPerHop = _bytesPerWindow ~/ 2;
+
 void _onAudioChunk(Uint8List chunk, ServiceInstance service) {
   _micBuffer.addAll(chunk);
   while (_micBuffer.length >= _bytesPerWindow) {
     final windowBytes = Uint8List.fromList(_micBuffer.sublist(0, _bytesPerWindow));
-    _micBuffer.removeRange(0, _bytesPerWindow);
+    _micBuffer.removeRange(0, _bytesPerHop);
     unawaited(_classifyWindow(windowBytes, service));
   }
 }

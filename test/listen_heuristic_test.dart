@@ -40,8 +40,8 @@ void main() {
   });
 
   test('Relaxed: a miss resets the streak, even at high confidence next tick', () {
-    final miss = checkScreamConfidence(confidence: 0.5, sensitivity: 'Relaxed', consecutiveHits: 2);
-    expect(miss.isHit, false, reason: '0.5 is below Relaxed\'s 0.65 threshold');
+    final miss = checkScreamConfidence(confidence: 0.45, sensitivity: 'Relaxed', consecutiveHits: 2);
+    expect(miss.isHit, false, reason: '0.45 is below Relaxed\'s 0.5 threshold');
     final recovered = checkScreamConfidence(confidence: 0.9, sensitivity: 'Relaxed', consecutiveHits: 0);
     expect(recovered.shouldFire, false, reason: 'streak restarts from zero after the miss');
   });

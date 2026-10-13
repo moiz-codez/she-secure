@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 import 'location_service.dart';
 
@@ -28,8 +29,6 @@ class UserDataService {
     await clearDemoData(uid);
     final here = await LocationService.getCurrentPosition();
     final home = (here?.latitude ?? 31.5204, here?.longitude ?? 74.3587); // Lahore fallback
-    final work = (home.$1 + 0.014, home.$2 + 0.012);
-    final market = (home.$1 - 0.006, home.$2 + 0.005);
     final random = Random(42);
 
     final samples = _user(uid).collection('sentinelSamples');
@@ -43,7 +42,7 @@ class UserDataService {
       final day = startOfToday.subtract(Duration(days: dayBack));
       final weekend = day.weekday >= 6;
       for (var minute = 0; minute < 24 * 60; minute += 15) {
-        final (lat, lng, speed) = weekend ? _weekendAt(minute, home, market) : _weekdayAt(minute, home, work);
+        final (lat, lng, speed) = demoRoutineAt(minute, weekend: weekend, home: home);
         final jitter = speed > 0.5 ? 0.0001 : 0.0002;
         batch.set(samples.doc(), {
           'timestamp': Timestamp.fromDate(day.add(Duration(minutes: minute))),
@@ -82,6 +81,15 @@ class UserDataService {
     }
     await batch.commit();
     return written;
+  }
+
+  /// Where the demo routine puts you at [minute] of the day, as
+  /// (lat, lng, speed m/s): work is ~2 km NE of [home], the market ~800 m SE.
+  @visibleForTesting
+  static (double, double, double) demoRoutineAt(int minute, {required bool weekend, required (double, double) home}) {
+    return weekend
+        ? _weekendAt(minute, home, (home.$1 - 0.006, home.$2 + 0.005))
+        : _weekdayAt(minute, home, (home.$1 + 0.014, home.$2 + 0.012));
   }
 
   static (double, double, double) _weekdayAt(int minute, (double, double) home, (double, double) work) {

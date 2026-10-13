@@ -97,7 +97,10 @@ class SheSecureApp extends StatelessWidget {
             Routes.tutorial: (_) => const TutorialScreen(),
             Routes.settings: (_) => const SettingsScreen(),
             Routes.profile: (_) => const ProfileScreen(),
-            Routes.sentinel: (_) => const SentinelScreen(),
+            Routes.sentinel: (context) {
+              context.read<SentinelProvider>().refreshSummary();
+              return const SentinelScreen();
+            },
             Routes.checkin: (_) => const CheckinScreen(),
             Routes.listen: (_) => const ListenScreen(),
           },

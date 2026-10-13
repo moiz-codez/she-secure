@@ -40,11 +40,3 @@ class StatusPill extends StatelessWidget {
     );
   }
 }
-
-/// Shown for actions the app doesn't implement yet (kept minimal and
-/// consistent instead of a bespoke widget per screen).
-void showNotBuiltSnack(BuildContext context) {
-  ScaffoldMessenger.of(context)
-    ..hideCurrentSnackBar()
-    ..showSnackBar(const SnackBar(content: Text('Not built in this pass yet.')));
-}

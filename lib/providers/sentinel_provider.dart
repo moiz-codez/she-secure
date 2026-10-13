@@ -5,7 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../services/permission_service.dart';
 import '../services/sentinel_service.dart';
+import '../utils/formatters.dart';
+import '../utils/routine_summary.dart';
+import '../utils/sentinel_heuristic.dart';
 import 'sos_provider.dart';
 
 class RoutineBlock {
@@ -64,32 +68,103 @@ class SentinelProvider extends ChangeNotifier {
   VoidCallback? onEscalated;
   VoidCallback? onConfirmedSafe;
 
-  static const routine = [
-    RoutineBlock(flex: 2, color: Color(0xFF2C2F3F)),
-    RoutineBlock(flex: 1, color: Color.fromRGBO(229, 82, 126, 0.28)),
-    RoutineBlock(flex: 4, color: Color(0xFF2C2F3F)),
-    RoutineBlock(flex: 1, color: Color.fromRGBO(229, 82, 126, 0.28)),
-    RoutineBlock(flex: 2, color: Color(0xFF2C2F3F)),
-  ];
+  RoutineSummary summary = RoutineSummary.empty;
+  List<AnomalyEntry> anomalies = const [];
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _eventsSub;
+  DateTime? _summaryLoadedAt;
 
-  static const watches = [
-    WatchItem(icon: Icons.route_outlined, label: 'Route', sub: 'Your two usual roads home'),
-    WatchItem(icon: Icons.schedule_outlined, label: 'Arrival time', sub: 'Home between 5.20 and 5.40 pm'),
-    WatchItem(icon: Icons.directions_walk_rounded, label: 'Movement', sub: 'Walking pace, not running'),
-    WatchItem(icon: Icons.wifi_rounded, label: 'Familiar places', sub: '6 saved locations'),
-  ];
+  static const _usual = Color(0xFF2C2F3F);
+  static const _moving = Color.fromRGBO(229, 82, 126, 0.28);
 
-  static const anomalies = [
-    AnomalyEntry(what: 'Off route near Hasan Square', when: 'Today, 5.34 pm', how: 'You confirmed safe in 9 s'),
-    AnomalyEntry(
-      what: 'Running pace, no workout logged',
-      when: '24 Aug, 8.02 pm',
-      how: 'You confirmed safe in 4 s',
-    ),
-    AnomalyEntry(what: 'Unknown area, stopped 40 min', when: '11 Aug, 6.15 pm', how: 'Alert sent · Ammi called'),
-  ];
+  /// The weekday strip as runs of same-colour blocks (moving vs. still).
+  List<RoutineBlock> get routine {
+    final slots = summary.movingSlots;
+    if (slots.isEmpty) return const [RoutineBlock(flex: 1, color: _usual)];
+    final blocks = <RoutineBlock>[];
+    var runStart = 0;
+    for (var i = 1; i <= slots.length; i++) {
+      if (i == slots.length || slots[i] != slots[runStart]) {
+        blocks.add(RoutineBlock(flex: i - runStart, color: slots[runStart] ? _moving : _usual));
+        runStart = i;
+      }
+    }
+    return blocks;
+  }
 
-  String get statusLabel => sentinelOn ? 'Watching · 12 days learned' : 'Paused';
+  List<WatchItem> get watches {
+    final s = summary;
+    const learning = 'Still learning';
+    final speed = s.typicalSpeed;
+    return [
+      WatchItem(
+        icon: Icons.route_outlined,
+        label: 'Route',
+        sub: s.sampleCount == 0 ? 'Learns over about 2 weeks' : '${s.sampleCount} readings over ${s.daysLearned} days',
+      ),
+      WatchItem(
+        icon: Icons.schedule_outlined,
+        label: 'Arrival time',
+        sub: s.settledByMinute == null ? learning : 'Usually settled by ${formatMinuteOfDay(s.settledByMinute!)}',
+      ),
+      WatchItem(
+        icon: Icons.directions_walk_rounded,
+        label: 'Movement',
+        sub: switch (speed) {
+          null => learning,
+          < 2.2 => 'Walking pace, not running',
+          < 6 => 'Cycling or slow-traffic pace',
+          _ => 'Usually in a vehicle',
+        },
+      ),
+      WatchItem(
+        icon: Icons.place_outlined,
+        label: 'Familiar places',
+        sub: s.familiarPlaces == 0 ? learning : '${s.familiarPlaces} saved locations',
+      ),
+    ];
+  }
+
+  String get statusLabel => !sentinelOn
+      ? 'Paused'
+      : summary.daysLearned == 0
+          ? 'Watching · learning your routine'
+          : 'Watching · ${summary.daysLearned} days learned';
+
+  /// Re-reads the last 14 days of samples into [summary]. Called when the
+  /// Sentinel screen opens (and after demo data loads).
+  /// ponytail: reads every sample in the window (~4k docs at 5-min
+  /// sampling), throttled to once per 10 min — move to a summary doc the
+  /// background service maintains if read costs ever matter.
+  Future<void> refreshSummary({bool force = false}) async {
+    final uid = _uid;
+    if (uid == null) return;
+    final loadedAt = _summaryLoadedAt;
+    if (!force && loadedAt != null && DateTime.now().difference(loadedAt) < const Duration(minutes: 10)) return;
+    _summaryLoadedAt = DateTime.now();
+    final since = DateTime.now().subtract(const Duration(days: 14));
+    final snap = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('sentinelSamples')
+        .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(since))
+        .get();
+    if (uid != _uid) return;
+    summary = summarizeRoutine([
+      for (final d in snap.docs)
+        if (d.data()['timestamp'] is Timestamp)
+          (
+            (d['timestamp'] as Timestamp).toDate(),
+            SentinelSample(
+              weekday: d['weekday'] as int,
+              minuteOfDay: d['minuteOfDay'] as int,
+              lat: (d['lat'] as num).toDouble(),
+              lng: (d['lng'] as num).toDouble(),
+              speed: (d['speed'] as num).toDouble(),
+            ),
+          ),
+    ]);
+    notifyListeners();
+  }
 
   String get sensitivityNote => switch (sensitivity) {
         'Relaxed' => 'Asks only when you are far off your usual route for over 30 minutes.',
@@ -108,6 +183,27 @@ class SentinelProvider extends ChangeNotifier {
       notifyListeners();
       _pushConfig();
     });
+
+    _eventsSub?.cancel();
+    _eventsSub = FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('sentinelEvents')
+        .orderBy('when', descending: true)
+        .limit(3)
+        .snapshots()
+        .listen((snap) {
+      anomalies = [
+        for (final d in snap.docs)
+          AnomalyEntry(
+            what: d.data()['what'] as String? ?? '',
+            when: formatWhen((d.data()['when'] as Timestamp?)?.toDate()),
+            how: d.data()['how'] as String? ?? '',
+          ),
+      ];
+      notifyListeners();
+    });
+    unawaited(refreshSummary(force: true));
 
     _startedSub ??= _service.on('checkinStarted').listen((event) {
       checkInActive = true;
@@ -133,7 +229,7 @@ class SentinelProvider extends ChangeNotifier {
 
   Future<void> _pushConfig() async {
     if (_uid == null) return;
-    if (sentinelOn) await Permission.notification.request();
+    if (sentinelOn) await ensurePermission(Permission.notification);
     await pushBackgroundConfig(
       {'uid': _uid, 'sentinelOn': sentinelOn, 'sensitivity': sensitivity},
       needed: sentinelOn,
@@ -143,6 +239,11 @@ class SentinelProvider extends ChangeNotifier {
   void unbindUser() {
     _prefsSub?.cancel();
     _prefsSub = null;
+    _eventsSub?.cancel();
+    _eventsSub = null;
+    summary = RoutineSummary.empty;
+    anomalies = const [];
+    _summaryLoadedAt = null;
     _startedSub?.cancel();
     _startedSub = null;
     _tickSub?.cancel();
@@ -186,6 +287,7 @@ class SentinelProvider extends ChangeNotifier {
   @override
   void dispose() {
     _prefsSub?.cancel();
+    _eventsSub?.cancel();
     _startedSub?.cancel();
     _tickSub?.cancel();
     _endedSub?.cancel();

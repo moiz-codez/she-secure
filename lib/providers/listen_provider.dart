@@ -5,7 +5,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../services/permission_service.dart';
 import '../services/sentinel_service.dart';
+import '../utils/formatters.dart';
 import 'sos_provider.dart';
 
 class HeardEntry {
@@ -44,10 +46,8 @@ class ListenProvider extends ChangeNotifier {
   /// navigation to the SOS screen on detection.
   VoidCallback? onDetectionEscalated;
 
-  static const heard = [
-    HeardEntry(what: 'Loud voices', when: 'Today, 2.14 pm', how: 'Ignored · below threshold'),
-    HeardEntry(what: 'Scream detected', when: '19 Aug, 11.48 pm', how: 'Alert sent · 4 contacts'),
-  ];
+  List<HeardEntry> heard = const [];
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _heardSub;
 
   String get statusLabel => listenOn ? 'Listening' : 'Off';
 
@@ -69,12 +69,32 @@ class ListenProvider extends ChangeNotifier {
       _pushConfig();
     });
 
+    _heardSub?.cancel();
+    _heardSub = FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('listenEvents')
+        .orderBy('when', descending: true)
+        .limit(3)
+        .snapshots()
+        .listen((snap) {
+      heard = [
+        for (final d in snap.docs)
+          HeardEntry(
+            what: d.data()['what'] as String? ?? '',
+            when: formatWhen((d.data()['when'] as Timestamp?)?.toDate()),
+            how: d.data()['how'] as String? ?? '',
+          ),
+      ];
+      notifyListeners();
+    });
+
     _detectedSub ??= _service.on('screamDetected').listen((_) => _showDetected());
   }
 
   Future<void> _pushConfig() async {
     if (_uid == null) return;
-    if (listenOn) await Permission.microphone.request();
+    if (listenOn) await ensurePermission(Permission.microphone);
     await pushBackgroundConfig(
       {'uid': _uid, 'listenOn': listenOn, 'earSensitivity': earSensitivity},
       needed: listenOn,
@@ -84,6 +104,9 @@ class ListenProvider extends ChangeNotifier {
   void unbindUser() {
     _prefsSub?.cancel();
     _prefsSub = null;
+    _heardSub?.cancel();
+    _heardSub = null;
+    heard = const [];
     _detectedSub?.cancel();
     _detectedSub = null;
     _service.invoke('stop');
@@ -140,6 +163,7 @@ class ListenProvider extends ChangeNotifier {
   void dispose() {
     _detectionTimer?.cancel();
     _prefsSub?.cancel();
+    _heardSub?.cancel();
     _detectedSub?.cancel();
     super.dispose();
   }

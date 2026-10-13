@@ -183,7 +183,15 @@ class _ListenScreenState extends State<ListenScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('WHAT IT HEARD', style: TextStyle(fontSize: 9.5, letterSpacing: 1.1, color: AppColors.textMuted(0.35))),
-                        for (final h in ListenProvider.heard)
+                        if (listen.heard.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: Text(
+                              'Nothing heard yet.',
+                              style: TextStyle(fontSize: 12.5, color: AppColors.textMuted(0.45)),
+                            ),
+                          ),
+                        for (final h in listen.heard)
                           Container(
                             padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 2),
                             decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.textMuted(0.07)))),

@@ -89,11 +89,11 @@ class SentinelScreen extends StatelessWidget {
                             height: 34,
                             child: Row(
                               children: [
-                                for (var i = 0; i < SentinelProvider.routine.length; i++) ...[
+                                for (final (i, block) in sentinel.routine.indexed) ...[
                                   if (i > 0) const SizedBox(width: 3),
                                   Expanded(
-                                    flex: SentinelProvider.routine[i].flex,
-                                    child: Container(color: SentinelProvider.routine[i].color),
+                                    flex: block.flex,
+                                    child: Container(color: block.color),
                                   ),
                                 ],
                               ],
@@ -129,7 +129,7 @@ class SentinelScreen extends StatelessWidget {
                           crossAxisSpacing: 9,
                           childAspectRatio: 1.55,
                           children: [
-                            for (final w in SentinelProvider.watches)
+                            for (final w in sentinel.watches)
                               Container(
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
@@ -178,7 +178,15 @@ class SentinelScreen extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('WHAT IT NOTICED', style: TextStyle(fontSize: 9.5, letterSpacing: 1.1, color: AppColors.textMuted(0.35))),
-                        for (final a in SentinelProvider.anomalies)
+                        if (sentinel.anomalies.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: Text(
+                              'Nothing unusual yet.',
+                              style: TextStyle(fontSize: 12.5, color: AppColors.textMuted(0.45)),
+                            ),
+                          ),
+                        for (final a in sentinel.anomalies)
                           Container(
                             padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 2),
                             decoration: BoxDecoration(border: Border(bottom: BorderSide(color: AppColors.textMuted(0.07)))),

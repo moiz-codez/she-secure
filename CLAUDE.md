@@ -93,8 +93,10 @@ lib/
 users/{uid}                        name, email, age?, city?, photoUrl?, createdAt
 users/{uid}/contacts/{id}          name, relation, phone, initials
 users/{uid}/sosHistory/{id}        where, whenTimestamp, detail, status
-users/{uid}/settings (doc)         features{...}, sentinelOn, listenOn, sens, earSens
-users/{uid}/sentinelSamples/{id}   timestamp, lat, lng, speed  — pruned after ~4 weeks
+users/{uid}/settings/preferences   features{...}, sentinelOn, sensitivity, listenOn, earSensitivity
+users/{uid}/sentinelSamples/{id}   timestamp, lat, lng, speed, weekday, minuteOfDay  — pruned after ~4 weeks
+users/{uid}/sentinelEvents/{id}    what, how, when  — check-in outcomes ("What it noticed")
+users/{uid}/listenEvents/{id}      what, how, when  — detections ("What it heard")
 users/{uid}/evidence/{id}          type (video/audio/photo), localPath, timestamp,
                                     durationOrSize  — metadata only, the file itself
                                     stays on-device under evidence/
@@ -172,9 +174,9 @@ end to end.
       Firestore (a simple dialog) — the native phone-contact picker is
       still Phase 3, but manual entry needed no native plugin so it
       shipped now rather than staying a fake button
-- [x] New accounts are seeded with the same 4 demo trusted contacts the
-      canvas used, written to Firestore on sign-up, so a fresh account
-      isn't a blank slate
+- [x] ~~New accounts are seeded with 4 demo trusted contacts~~ — reverted
+      later (f3dd569): new accounts start with no contacts, because a real
+      silent SMS to made-up numbers is worse than an empty list.
 - Verify: `flutter analyze` clean, `flutter test` passing, `flutter build
   apk --debug` succeeds. User tests sign up, sign in, sign out, and the
   Firestore round-trip (contacts persist across a logout/login) manually.
@@ -348,6 +350,52 @@ above. What's left is the user's own manual pass on a real device —
 especially Smart Sentinel's background survival and Distress Listening's
 real-world mic accuracy, which only real hardware over real time can
 actually judge.
+
+---
+
+## Post-phase review (Oct 2026)
+
+A full review pass after all six phases. It found and fixed these:
+
+- **Background alerts never fired.** permission_handler's `request()`
+  throws when there's no Activity, and the background service's engine
+  never has one. `LocationService` called it outside its try, so every
+  background alert (Sentinel, Listen, shake, power button) threw before
+  writing history or sending SMS, and Sentinel never stored a sample.
+  `record`'s `hasPermission()` returns false with no Activity, so the
+  Listen mic never started. Fixed with `ensurePermission()`
+  (`permission_service.dart`): it checks status first, only prompts when
+  needed, and never throws. Background code relies on the up-front
+  `requestAll()` grant.
+- **Concurrent permission prompts at sign-in.** Overlapping `request()`
+  calls threw "already running", which could skip
+  `pushBackgroundConfig`. The same helper fixes this.
+- **The Sentinel baseline was only you, 5 minutes ago.** The query took
+  the 60 newest same-weekday samples, which is only today's last ~5 hours.
+  It now queries the same weekday within ±90 min of time of day from past
+  days only. This needs the `(weekday, minuteOfDay)` composite index,
+  which is deployed.
+- **Dead Settings switches.** The Smart Sentinel and Distress listening
+  rows wrote to a `features` map nothing read. They now flip
+  `sentinelOn`/`listenOn`. The SOS button switch gates Home's hold
+  button, Fake call hides its Home tile, and Share live location removes
+  the location from outgoing alerts.
+- **Stubs completed.** Settings → Restore defaults, Settings → Delete
+  recordings and history, and the SOS screen's mic (audio evidence) and
+  share buttons. `showNotBuiltSnack` is deleted.
+- **Hardcoded AI screens.** Sentinel's "12 days learned", weekday strip,
+  watch list and anomalies, and Listen's "What it heard", now come from
+  real data (`routine_summary.dart`, `sentinelEvents`, `listenEvents`).
+  **Settings → Demo data** seeds 14 days of `demo: true` samples and
+  events around the current GPS fix, and removes them again.
+- Also: cancelling SOS during the location fix still sent the SMS (now it
+  doesn't). Check-in could end twice and fire two alerts (now guarded).
+  Sign-up allowed an empty name. A background alert wasn't shown as
+  active after the app was reopened.
+- Login was verified live against `she-secure-pk` with a throwaway
+  account that was then deleted: sign-up, sign-in, wrong-password
+  rejection, rules allow own/deny other/deny unauthenticated, and the
+  index query.
 
 ---
 

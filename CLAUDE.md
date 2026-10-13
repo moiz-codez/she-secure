@@ -262,13 +262,12 @@ end to end.
   on timeout, no user action required) is untouched; only the "confirm
   you're fine" convenience path needs one extra tap to open the app, which
   is normal Android notification behavior anyway.
-- **Honest gap**: a background-fired alert's SOS history record is real
-  (written straight to Firestore, same as any other alert), but if the app
-  is reopened afterward the SOS screen won't show "armed" unless it was
-  already open at the moment the alert fired (`SosProvider.state` is local,
-  not Firestore-backed) — `markArmedExternally()` covers the "app was
-  open" case; the "app was closed, then reopened after" case is a cosmetic
-  gap, not a missed alert.
+- **Reopen-after-background-alert** (was an honest gap, now closed):
+  `SosProvider` adopts the newest `sosHistory` doc if it still reads
+  "Alert sent…" and is under 30 min old — the SOS state comes back armed
+  with the real elapsed time, Home shows a tappable "Alert active" pill,
+  and Cancel records against that doc. The 30-min window stands in for
+  "still active", since an uncancelled alert has no other end marker.
 - Verify: `flutter analyze`/`flutter build` clean, `flutter test` passing
   (including the new heuristic unit tests). The user tests manually on a
   real device — background survival across OEM battery optimization can

@@ -11,6 +11,7 @@ import '../providers/sentinel_provider.dart';
 import '../providers/sos_provider.dart';
 import '../services/profile_photo_service.dart';
 import '../theme/app_colors.dart';
+import '../utils/formatters.dart';
 import '../widgets/hold_to_confirm_button.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -93,7 +94,27 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 padding: const EdgeInsets.only(top: 16, left: 26),
                 child: Align(
                   alignment: Alignment.centerLeft,
-                  child: Container(
+                  child: Consumer<SosProvider>(
+                    // A background-fired alert (Sentinel, Listen, shortcuts)
+                    // lands the user here, not on the SOS screen.
+                    builder: (context, sos, contactsPill) => sos.state != SosState.armed
+                        ? contactsPill!
+                        : GestureDetector(
+                            onTap: () => Navigator.of(context).pushNamed(Routes.sos),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: AppColors.accent.withValues(alpha: 0.18),
+                                borderRadius: BorderRadius.circular(100),
+                                border: Border.all(color: AppColors.accent.withValues(alpha: 0.5)),
+                              ),
+                              child: Text(
+                                'Alert active · ${formatMmSs(sos.elapsed)} — tap to view',
+                                style: const TextStyle(fontSize: 12, color: AppColors.accentPale),
+                              ),
+                            ),
+                          ),
+                    child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
                     decoration: BoxDecoration(
                       color: AppColors.textMuted(0.05),
@@ -117,6 +138,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                         ),
                       ],
                     ),
+                  ),
                   ),
                 ),
               ),

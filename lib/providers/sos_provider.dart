@@ -51,6 +51,7 @@ class SosProvider extends ChangeNotifier {
           detail: data['detail'] as String? ?? '',
         );
       }).toList();
+      _adoptActiveAlert(snapshot.docs.isEmpty ? null : snapshot.docs.first);
       notifyListeners();
     });
     // Shake / power-button ×3 fire directly from the background service
@@ -60,10 +61,30 @@ class SosProvider extends ChangeNotifier {
     _shortcutSub ??= FlutterBackgroundService().on('shortcutFired').listen((_) => markArmedExternally());
   }
 
+  /// An alert fired by the background service (Sentinel, Listen, shake,
+  /// power button) only exists here as a history doc — its 'detail' stays
+  /// 'Alert sent…' until someone cancels it. Adopting that doc means a
+  /// reopened app shows the alert as armed (with the real elapsed time),
+  /// and Cancel records against it like any in-app alert.
+  /// ponytail: 30-min window stands in for "still active" — an alert the
+  /// user never cancelled would otherwise re-arm forever on every launch.
+  void _adoptActiveAlert(QueryDocumentSnapshot<Map<String, dynamic>>? newest) {
+    if (newest == null || state == SosState.counting) return;
+    if (!(newest.data()['detail'] as String? ?? '').startsWith('Alert sent')) return;
+    final when = (newest.data()['when'] as Timestamp?)?.toDate() ?? DateTime.now();
+    final age = DateTime.now().difference(when);
+    if (age > const Duration(minutes: 30)) return;
+    _activeHistoryDoc ??= newest.reference;
+    if (state == SosState.idle) {
+      markArmedExternally(elapsedSeconds: age.inSeconds.clamp(0, 1800));
+    }
+  }
+
   void unbind() {
     _historySub?.cancel();
     _historySub = null;
     _historyCollection = null;
+    _activeHistoryDoc = null;
     history = const [];
     notifyListeners();
   }
@@ -104,10 +125,11 @@ class SosProvider extends ChangeNotifier {
   /// (it runs in a separate isolate with no access to this instance), then
   /// calls this just so the SOS screen shows "armed" if the app happens to
   /// be open. Unlike [arm], this never re-sends anything.
-  void markArmedExternally() {
+  void markArmedExternally({int elapsedSeconds = 0}) {
+    if (state == SosState.armed) return;
     _countdownTimer?.cancel();
     state = SosState.armed;
-    elapsed = 0;
+    elapsed = elapsedSeconds;
     notifyListeners();
     _elapsedTimer?.cancel();
     _elapsedTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -135,6 +157,9 @@ class SosProvider extends ChangeNotifier {
     // state above is already live regardless of whether the fix/SMS land.
     try {
       final position = await LocationService.getCurrentPosition();
+      // Cancelled while the fix was pending — nothing has gone out yet, so
+      // don't send it now.
+      if (state != SosState.armed) return;
       final where = position == null
           ? 'Location unavailable'
           : '${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)}';

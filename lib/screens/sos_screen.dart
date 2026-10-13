@@ -1,16 +1,55 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/sos_event.dart';
 import '../providers/contacts_provider.dart';
+import '../providers/recordings_provider.dart';
 import '../providers/sos_provider.dart';
+import '../services/location_service.dart';
 import '../theme/app_colors.dart';
 import '../utils/formatters.dart';
 import '../widgets/hold_to_confirm_button.dart';
 import '../widgets/status_pill.dart';
 
 Future<void> _callNumber(String num) => launchUrl(Uri(scheme: 'tel', path: num));
+
+void _snack(BuildContext context, String text) => ScaffoldMessenger.of(context)
+  ..hideCurrentSnackBar()
+  ..showSnackBar(SnackBar(content: Text(text)));
+
+/// Audio evidence during an alert — the same local-only capture as the
+/// Recordings screen's Audio tab, saved to the same list.
+Future<void> _toggleAudioEvidence(BuildContext context) async {
+  final recordings = context.read<RecordingsProvider>();
+  if (recordings.isRecording && recordings.tab != RecordingTab.audio) {
+    _snack(context, 'A video is already recording on the Recordings screen.');
+    return;
+  }
+  final starting = !recordings.isRecording;
+  recordings.setTab(RecordingTab.audio);
+  await recordings.toggleRecording();
+  if (!context.mounted) return;
+  if (starting && !recordings.isRecording) {
+    _snack(context, "Couldn't start recording — check microphone permission.");
+  } else {
+    _snack(context, starting ? 'Recording audio. Tap again to stop.' : 'Saved to Recordings.');
+  }
+}
+
+Future<void> _shareLocation(BuildContext context) async {
+  final position = await LocationService.getCurrentPosition();
+  if (!context.mounted) return;
+  if (position == null) {
+    _snack(context, 'Location is unavailable — turn it on to share where you are.');
+    return;
+  }
+  await SharePlus.instance.share(ShareParams(
+    text: 'I need help, this is my location. https://maps.google.com/?q=${position.latitude},${position.longitude}',
+    subject: 'My location',
+  ));
+}
 
 class SosScreen extends StatelessWidget {
   const SosScreen({super.key});
@@ -542,9 +581,15 @@ class _ArmedBody extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 9),
-                _SquareIconButton(icon: Icons.mic_none_rounded, onTap: () => showNotBuiltSnack(context)),
+                Selector<RecordingsProvider, bool>(
+                  selector: (_, r) => r.isRecording && r.tab == RecordingTab.audio,
+                  builder: (context, recordingAudio, _) => _SquareIconButton(
+                    icon: recordingAudio ? Icons.stop_rounded : Icons.mic_none_rounded,
+                    onTap: () => _toggleAudioEvidence(context),
+                  ),
+                ),
                 const SizedBox(width: 9),
-                _SquareIconButton(icon: Icons.share_rounded, onTap: () => showNotBuiltSnack(context)),
+                _SquareIconButton(icon: Icons.share_rounded, onTap: () => _shareLocation(context)),
               ],
             ),
           ),

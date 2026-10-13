@@ -241,6 +241,10 @@ class _SignupFormState extends State<_SignupForm> {
   }
 
   Future<void> _submit() async {
+    if (_name.text.trim().isEmpty) {
+      setState(() => _error = 'Enter your name.');
+      return;
+    }
     final emailError = validateEmail(_email.text);
     if (emailError != null) {
       setState(() => _error = emailError);

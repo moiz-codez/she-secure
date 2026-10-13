@@ -48,6 +48,11 @@ const _defaultFeatures = {
 /// `features` map on `users/{uid}/settings`. [SentinelProvider] and
 /// [ListenProvider] read/write their own fields on that same document
 /// independently — see their `bindUser`.
+/// Rows whose real switch lives in its own field (owned by
+/// [SentinelProvider] / [ListenProvider]) rather than in `features` —
+/// toggling them here must flip the field that actually starts/stops them.
+const _ownFields = {'sentinel': 'sentinelOn', 'listen': 'listenOn'};
+
 class SettingsProvider extends ChangeNotifier {
   Map<String, bool> features = Map.of(_defaultFeatures);
   DocumentReference<Map<String, dynamic>>? _doc;
@@ -112,6 +117,9 @@ class SettingsProvider extends ChangeNotifier {
       features = stored == null
           ? Map.of(_defaultFeatures)
           : {for (final k in _defaultFeatures.keys) k: (stored[k] as bool?) ?? _defaultFeatures[k]!};
+      for (final MapEntry(:key, :value) in _ownFields.entries) {
+        features[key] = data?[value] as bool? ?? true;
+      }
       notifyListeners();
       _pushShortcutConfig();
     });
@@ -129,7 +137,23 @@ class SettingsProvider extends ChangeNotifier {
   void toggle(String key) {
     features[key] = !(features[key] ?? false);
     notifyListeners();
-    _doc?.set({'features': features}, SetOptions(merge: true));
+    final ownField = _ownFields[key];
+    _doc?.set(
+      ownField != null ? {ownField: features[key]} : {'features': features},
+      SetOptions(merge: true),
+    );
+  }
+
+  /// Every switch and sensitivity back to its default. Contacts, history
+  /// and recordings are untouched.
+  Future<void> restoreDefaults() async {
+    await _doc?.set({
+      'features': _defaultFeatures,
+      'sentinelOn': true,
+      'sensitivity': 'Balanced',
+      'listenOn': true,
+      'earSensitivity': 'Balanced',
+    }, SetOptions(merge: true));
   }
 
   /// Shake-to-alert and Power button ×3 run in the shared background

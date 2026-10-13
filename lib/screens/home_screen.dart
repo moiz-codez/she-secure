@@ -8,6 +8,7 @@ import '../providers/auth_provider.dart';
 import '../providers/contacts_provider.dart';
 import '../providers/listen_provider.dart';
 import '../providers/sentinel_provider.dart';
+import '../providers/settings_provider.dart';
 import '../providers/sos_provider.dart';
 import '../services/profile_photo_service.dart';
 import '../theme/app_colors.dart';
@@ -188,6 +189,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                         builder: (context, sos, _) => HoldToConfirmButton(
                           holdDuration: const Duration(milliseconds: 1100),
                           onConfirmed: () {
+                            if (!context.read<SettingsProvider>().isOn('sos')) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('The SOS button is off — turn it on in Settings.')),
+                              );
+                              return;
+                            }
                             sos.beginCountdown();
                             Navigator.of(context).pushNamed(Routes.sos);
                           },
@@ -263,11 +270,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       label: 'Record',
                       onTap: () => Navigator.of(context).pushNamed(Routes.recordings),
                     ),
-                    _HomeTile(
-                      icon: Icons.phone_callback_outlined,
-                      label: 'Fake call',
-                      onTap: () => Navigator.of(context).pushNamed(Routes.fakeCall),
-                    ),
+                    if (context.watch<SettingsProvider>().isOn('fake'))
+                      _HomeTile(
+                        icon: Icons.phone_callback_outlined,
+                        label: 'Fake call',
+                        onTap: () => Navigator.of(context).pushNamed(Routes.fakeCall),
+                      ),
                     _HomeTile(
                       icon: Icons.play_circle_outline_rounded,
                       label: 'Tutorial',

@@ -10,6 +10,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 
 import '../services/recording_service.dart';
+import '../utils/formatters.dart';
 
 enum RecordingTab { video, audio, photo }
 
@@ -64,7 +65,7 @@ class RecordingsProvider extends ChangeNotifier {
         final data = d.data();
         final type = data['type'] as String? ?? 'video';
         return RecordingClip(
-          name: '${type[0].toUpperCase()}${type.substring(1)} · ${_formatWhen((data['timestamp'] as Timestamp?)?.toDate())}',
+          name: '${type[0].toUpperCase()}${type.substring(1)} · ${formatWhen((data['timestamp'] as Timestamp?)?.toDate())}',
           meta: data['durationOrSize'] as String? ?? '',
           localPath: data['localPath'] as String? ?? '',
           icon: switch (type) {
@@ -142,14 +143,6 @@ class RecordingsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  static String _formatWhen(DateTime? dt) {
-    if (dt == null) return '';
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    final hour12 = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
-    final minute = dt.minute.toString().padLeft(2, '0');
-    final period = dt.hour >= 12 ? 'pm' : 'am';
-    return '${dt.day} ${months[dt.month - 1]}, $hour12:$minute $period';
-  }
 
   static String _formatDuration(int totalSeconds) {
     final minutes = totalSeconds ~/ 60;
@@ -341,6 +334,14 @@ class RecordingsProvider extends ChangeNotifier {
   /// Deletes the app's own private copy, its indexed copy in the shared
   /// Gallery/Music collection (best-effort — already-missing there is
   /// fine), and its Firestore reference.
+  /// Deletes newest-index-first so the indices still to go stay valid as
+  /// the Firestore snapshot shrinks underneath.
+  Future<void> deleteAll() async {
+    for (var i = _docIds.length - 1; i >= 0; i--) {
+      await deleteClip(i);
+    }
+  }
+
   Future<void> deleteClip(int index) async {
     final collection = _evidenceCollection;
     if (collection == null || index >= _docIds.length) return;

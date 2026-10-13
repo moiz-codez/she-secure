@@ -1,6 +1,8 @@
 import 'package:another_telephony/telephony.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import 'permission_service.dart';
+
 /// Real silent SMS send via Android's SmsManager — no compose sheet, no
 /// user tap. Only safe to do without Play Store's Permissions Declaration
 /// Form because this app is APK-sideload only (see CLAUDE.md).
@@ -16,8 +18,7 @@ class SmsService {
   /// the bad one. One contact failing to send must never stop the rest.
   static Future<bool> sendToAll(List<String> numbers, String message) async {
     if (numbers.isEmpty) return true;
-    final status = await Permission.sms.request();
-    if (!status.isGranted) return false;
+    if (!await ensurePermission(Permission.sms)) return false;
     for (final number in numbers) {
       try {
         await _telephony.sendSms(to: number, message: message);

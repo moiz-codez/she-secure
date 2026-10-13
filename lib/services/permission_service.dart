@@ -11,13 +11,32 @@ class PermissionService {
   /// Returns the SMS permission's final status so the caller can offer
   /// help if it never got granted (see [showSmsRestrictedHelp]).
   static Future<PermissionStatus> requestAll() async {
-    await Permission.locationWhenInUse.request();
-    await Permission.contacts.request();
-    await Permission.camera.request();
-    await Permission.microphone.request();
-    await Permission.notification.request();
-    await Permission.ignoreBatteryOptimizations.request();
-    return Permission.sms.request();
+    for (final permission in [
+      Permission.locationWhenInUse,
+      Permission.contacts,
+      Permission.camera,
+      Permission.microphone,
+      Permission.notification,
+      Permission.ignoreBatteryOptimizations,
+      Permission.sms,
+    ]) {
+      await ensurePermission(permission);
+    }
+    return Permission.sms.status;
+  }
+}
+
+/// True if [permission] is granted. Prompts only when it isn't — and
+/// never throws: the background service's engine has no Activity, and
+/// permission_handler's `request()` throws without one, which used to
+/// abort every background-fired alert before it sent anything. Background
+/// callers rely on the up-front [PermissionService.requestAll] grant.
+Future<bool> ensurePermission(Permission permission) async {
+  if (await permission.isGranted) return true;
+  try {
+    return (await permission.request()).isGranted;
+  } catch (_) {
+    return false;
   }
 }
 

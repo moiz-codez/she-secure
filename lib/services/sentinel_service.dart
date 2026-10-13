@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:record/record.dart';
 import 'package:screen_state_v2/screen_state.dart';
@@ -142,6 +143,8 @@ Timer? _sampleTimer;
 Timer? _checkInTimer;
 int _checkInSecondsLeft = 0;
 bool _checkInActive = false;
+String _checkInReason = '';
+bool _checkInIsTest = false;
 int _anomalyStreak = 0;
 
 bool _listenOn = false;
@@ -274,6 +277,7 @@ void _onStart(ServiceInstance service) async {
       'You are 2.4 km off your usual route home and moving at running pace.',
       notificationsOrNull!,
       service,
+      test: true,
     );
   });
 
@@ -288,7 +292,7 @@ void _onStart(ServiceInstance service) async {
 
   service.on('simulateScream').listen((_) async {
     await ready.future;
-    await _fireScream(service);
+    await _fireScream(service, test: true);
   });
 
   service.on('scheduleFakeCall').listen((event) async {
@@ -375,11 +379,10 @@ Future<void> _fireFakeCall(
 }
 
 void _startMicStream(ServiceInstance service) async {
+  // Not recorder.hasPermission(): it reports false whenever there's no
+  // Activity, which is always the case in this background engine.
+  if (!await Permission.microphone.isGranted) return;
   final recorder = AudioRecorder();
-  if (!await recorder.hasPermission()) {
-    recorder.dispose();
-    return;
-  }
   final stream = await recorder.startStream(
     const RecordConfig(encoder: AudioEncoder.pcm16bits, sampleRate: _yamnetSampleRate, numChannels: 1),
   );
@@ -471,9 +474,24 @@ Future<void> _classifyWindow(Uint8List bytes, ServiceInstance service) async {
   }
 }
 
-Future<void> _fireScream(ServiceInstance service) async {
-  await _fireAlert(source: 'Distress Listening');
+Future<void> _fireScream(ServiceInstance service, {bool test = false}) async {
+  final sent = await _fireAlert(source: 'Distress Listening');
+  _logEvent('listenEvents', what: test ? 'Test detection' : 'Scream detected', how: _alertSentLabel(sent));
   service.invoke('screamDetected');
+}
+
+String _alertSentLabel(int contacts) => 'Alert sent · $contacts contact${contacts == 1 ? '' : 's'}';
+
+/// Feeds the "What it noticed" / "What it heard" lists on the Sentinel and
+/// Listen screens.
+void _logEvent(String collection, {required String what, required String how}) {
+  final uid = _uid;
+  if (uid == null) return;
+  unawaited(FirebaseFirestore.instance.collection('users').doc(uid).collection(collection).add({
+    'what': what,
+    'how': how,
+    'when': FieldValue.serverTimestamp(),
+  }));
 }
 
 Future<void> _sample(FlutterLocalNotificationsPlugin notifications, ServiceInstance service) async {
@@ -510,12 +528,20 @@ Future<void> _sample(FlutterLocalNotificationsPlugin notifications, ServiceInsta
     unawaited(doc.reference.delete());
   }
 
+  // Same weekday, ±90 min of time-of-day, from past weeks only — the
+  // routine baseline. (Ordering by newest instead used to return just
+  // today's last few hours, so it only ever compared you to yourself.)
+  // ponytail: no wrap across midnight — a 23:30 sample doesn't see 00:30
+  // baselines; add a second query if late-night routes matter.
+  final startOfToday = DateTime(now.year, now.month, now.day);
   final recent = await samples
       .where('weekday', isEqualTo: sample.weekday)
-      .orderBy('timestamp', descending: true)
-      .limit(60)
+      .where('minuteOfDay', isGreaterThanOrEqualTo: sample.minuteOfDay - 90)
+      .where('minuteOfDay', isLessThanOrEqualTo: sample.minuteOfDay + 90)
+      .limit(300)
       .get();
   final baseline = recent.docs
+      .where((d) => (d['timestamp'] as Timestamp?)?.toDate().isBefore(startOfToday) ?? false)
       .map((d) => SentinelSample(
             weekday: d['weekday'] as int,
             minuteOfDay: d['minuteOfDay'] as int,
@@ -523,7 +549,6 @@ Future<void> _sample(FlutterLocalNotificationsPlugin notifications, ServiceInsta
             lng: (d['lng'] as num).toDouble(),
             speed: (d['speed'] as num).toDouble(),
           ))
-      .where((s) => (s.minuteOfDay - sample.minuteOfDay).abs() <= 90)
       .toList();
 
   final result = checkAnomaly(
@@ -540,9 +565,16 @@ Future<void> _sample(FlutterLocalNotificationsPlugin notifications, ServiceInsta
   }
 }
 
-void _startCheckIn(String reason, FlutterLocalNotificationsPlugin notifications, ServiceInstance service) {
+void _startCheckIn(
+  String reason,
+  FlutterLocalNotificationsPlugin notifications,
+  ServiceInstance service, {
+  bool test = false,
+}) {
   if (_checkInActive) return;
   _checkInActive = true;
+  _checkInReason = reason;
+  _checkInIsTest = test;
   _checkInSecondsLeft = 30;
 
   notifications.show(
@@ -583,12 +615,17 @@ Future<void> _endCheckIn({
   required FlutterLocalNotificationsPlugin notifications,
   required ServiceInstance service,
 }) async {
+  if (!_checkInActive) return;
   _checkInTimer?.cancel();
   _checkInActive = false;
   await notifications.cancel(id: sentinelCheckinNotificationId);
 
+  final what = _checkInIsTest ? 'Test check-in' : _checkInReason;
   if (escalated) {
-    await _fireAlert(source: 'Smart Sentinel');
+    final sent = await _fireAlert(source: 'Smart Sentinel');
+    _logEvent('sentinelEvents', what: what, how: _alertSentLabel(sent));
+  } else {
+    _logEvent('sentinelEvents', what: what, how: 'You confirmed safe in ${30 - _checkInSecondsLeft} s');
   }
   service.invoke('checkinEnded', {'escalated': escalated});
 }
@@ -598,11 +635,12 @@ Future<void> _endCheckIn({
 /// through `SosProvider.arm()`) because this background isolate has no
 /// access to that main-isolate instance; `SosProvider.markArmedExternally`
 /// just mirrors the resulting armed state if the app happens to be open.
-Future<void> _fireAlert({required String source}) async {
+/// Returns how many contacts it messaged.
+Future<int> _fireAlert({required String source}) async {
   final uid = _uid;
-  if (uid == null) return;
+  if (uid == null) return 0;
 
-  final position = await LocationService.getCurrentPosition();
+  final position = await LocationService.positionForAlert(uid);
   final where = position == null
       ? 'Location unavailable'
       : '${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)}';
@@ -618,4 +656,5 @@ Future<void> _fireAlert({required String source}) async {
   final numbers = contactsSnapshot.docs.map((d) => d['phone'] as String? ?? '').where((p) => p.isNotEmpty).toList();
   final link = position == null ? '' : ' https://maps.google.com/?q=${position.latitude},${position.longitude}';
   await SmsService.sendToAll(numbers, 'I need help, this is my location.$link');
+  return numbers.length;
 }

@@ -47,7 +47,7 @@ class SosProvider extends ChangeNotifier {
         final data = d.data();
         return SosHistoryEntry(
           where: data['where'] as String? ?? 'Unknown location',
-          when: _formatWhen((data['when'] as Timestamp?)?.toDate()),
+          when: formatWhen((data['when'] as Timestamp?)?.toDate()),
           detail: data['detail'] as String? ?? '',
         );
       }).toList();
@@ -89,17 +89,6 @@ class SosProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  static String _formatWhen(DateTime? dt) {
-    if (dt == null) return '';
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
-    final hour12 = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
-    final minute = dt.minute.toString().padLeft(2, '0');
-    final period = dt.hour >= 12 ? 'pm' : 'am';
-    return '${dt.day} ${months[dt.month - 1]}, $hour12:$minute $period';
-  }
 
   void beginCountdown() {
     if (state != SosState.idle) return;
@@ -156,7 +145,8 @@ class SosProvider extends ChangeNotifier {
     // as in plain unit tests) can't leave the alert stuck mid-arm — the SOS
     // state above is already live regardless of whether the fix/SMS land.
     try {
-      final position = await LocationService.getCurrentPosition();
+      final uid = _historyCollection?.parent?.id;
+      final position = uid == null ? null : await LocationService.positionForAlert(uid);
       // Cancelled while the fix was pending — nothing has gone out yet, so
       // don't send it now.
       if (state != SosState.armed) return;
